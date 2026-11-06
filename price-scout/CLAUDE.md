@@ -11,9 +11,10 @@ Optional env vars for alert emails: `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USER`,
 
 ## Layout
 - `app.py`: everything (scraping, currency, categories, alerts, the page template `PAGE`).
-- `sites.json`: the 24 stores, each `{name, base_url}`. Optional per-store overrides:
+- `sites.json`: the 25 stores, each `{name, base_url}`. Optional per-store overrides:
   `origin`, `currency`, `shipping_usd`, `free_shipping_over_usd`, `duty_pct`, `duties_included`,
-  `type: "html"` with CSS selectors and `search_url` for non-Shopify stores.
+  `type: "html"` with CSS selectors (`item`, `title`, `price`, `link`, optional `image`, `sizes`, `size_soldout_class`) and `search_url` for non-Shopify stores (e.g. Self Edge, which runs OpenCart). `check_stores.py` searches "jeans" for html stores when no query is given. `search_encoding` (e.g. `euc-jp` for Celluloid's Color Me Shop) encodes the query; non-$ prices take the first number (Japanese "30,000円(税込33,000円)" -> 30,000, the export / pre-tax price).
+  `type: "square"` + `square_owner_id` + `square_site_id` (Brass Tacks) reads Square Online's storefront JSON at `/app/store/api/v28/editor/users/{owner}/sites/{site}/products`, reshaped like a Shopify product. Find the owner id in the shop page's network requests (`/app/website/cms/api/v1/users/{owner}/...`) and the site id as `catalogSiteId` in the page HTML.
 - `alerts.db`: SQLite, created on first run.
 
 ## Endpoints

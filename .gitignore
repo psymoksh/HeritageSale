@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 price-scout/alerts.db
 price-scout/store_report.json
+store_report.json
+alerts.db
+.env
+.DS_Store
+.venv/
