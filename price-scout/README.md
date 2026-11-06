@@ -27,6 +27,12 @@ The cloud sandbox cannot reach the stores, so do this on your own computer.
 4. Open `store_report.json` for the full detail, including the reason each failed store failed.
 5. Share the table to get failing stores fixed.
 
+### 3b. Find out why fit measurements are missing for a store
+
+1. Run `python3 diagnose_fit.py` (all stores) or `python3 diagnose_fit.py -s "Tendrel"` (one store). It takes a minute or two.
+2. Each store gets a one-line verdict, for example "chart appears to be an image" or "measurement words present but parser missed it".
+3. Attach the saved `fit_diagnosis.txt` to the chat so the parser can be taught that store's chart layout.
+
 ## 4. Change a store's settings
 
 1. Open `sites.json`.
@@ -58,6 +64,8 @@ The cloud sandbox cannot reach the stores, so do this on your own computer.
 4. Add a line to the change log below.
 
 ## Change log
+
+- **Fit diagnosis tool.** `diagnose_fit.py` checks a few in-stock jeans per store and reports whether a size chart exists and whether the parser read it. First live run: all 25 stores returned listings; fit measurements were readable at only 6 stores (Blue Owl, Hinoya, Okayama Denim, Denimio, Red Cast, James Dant). Known: Blue Owl and Blue Seven hit the 5,000-product catalog cap; Celluloid shows no sizes.
 
 - **Abuse protection.** Per-visitor rate limits (see section 6); alerts are private to the browser that made them (cookie token), at most 20 each; the public "check all alerts" endpoint now only checks the caller's own alerts and is limited to 5 per hour; alert lists no longer include any email data; `sites.json` is found relative to `app.py` so the app starts from any folder. New dependency: `flask-limiter`.
 

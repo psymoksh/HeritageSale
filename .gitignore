@@ -7,3 +7,4 @@ alerts.db
 .env
 .DS_Store
 .venv/
+fit_diagnosis.txt
