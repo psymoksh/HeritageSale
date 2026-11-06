@@ -35,6 +35,10 @@ To look at one product page in detail (for example a store whose size table is n
 2. Each store gets a one-line verdict, for example "chart appears to be an image" or "measurement words present but parser missed it".
 3. Attach the saved `fit_diagnosis.txt` to the chat so the parser can be taught that store's chart layout. For each "parser missed" product the file includes the page address and the raw HTML around the measurement words, so no separate page dump is needed.
 
+### 3c. Find out why a search finds nothing at one store
+
+Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your search text, and part of the store's name). It loads that store's real catalog and prints, for each word you typed, how many products contain it as a whole word, how many match every word (what the site shows), and the closest misses with the word that was missing. Use it when a store seems to be missing results.
+
 ## 4. Change a store's settings
 
 1. Open `sites.json`.
@@ -66,6 +70,8 @@ To look at one product page in detail (for example a store whose size table is n
 4. Add a line to the change log below.
 
 ## Change log
+
+- **Search explainer.** `explain_search.py "query" -s "store"` shows why a store returns few or no results for a search (per-word counts and near misses). Added after Red Cast looked empty although its catalog loads (1,877 listings).
 
 - **Size chart panel, shorter pages, exact search.**
   1. *Size buttons.* Each product shows its in-stock sizes as buttons (at most 8; "+N sizes" reveals the rest, sold-out ones crossed out). With "My size" set, only that size shows; with fit ranges set, only fitting sizes show.
