@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+price-scout/alerts.db
+price-scout/store_report.json

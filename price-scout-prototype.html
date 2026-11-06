@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Price Scout (prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@300..800&display=swap" rel="stylesheet">
+<style>
+:root{--dp-color-ground:#f5f4ee;--dp-color-ink:#000000;--dp-color-accent:#ff0000;--dp-color-field:#0000ff;--dp-color-field-support:#ffff00;--dp-color-quiet:#e8e8e8;--dp-color-on-field:#ffffff;
+--dp-typography-face:"Bauhaus Host","Host Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;--dp-typography-body:18px;--dp-typography-reading:17px;--dp-typography-label:15px;--dp-typography-caption:14px;
+--dp-typography-weight-display:800;--dp-typography-weight-action:750;--dp-typography-weight-label:650;--dp-typography-weight-reading:450;--dp-typography-reading-leading:1.5;
+--dp-spacing-gutter:clamp(22px,4.45cqi,72px);--dp-radius-square:0;--dp-radius-circle:50%;--dp-border-rule:4px;--dp-border-rule-compact:3px;--dp-motion-interaction:0s;color-scheme:light}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;container-type:inline-size;background:var(--dp-color-ground);color:var(--dp-color-ink);font-family:var(--dp-typography-face);font-size:var(--dp-typography-body);font-weight:var(--dp-typography-weight-reading);line-height:var(--dp-typography-reading-leading);padding-bottom:env(safe-area-inset-bottom,0px)}
+h1{margin:0 0 20px;padding-right:clamp(56px,10cqi,128px);font-size:clamp(44px,9cqi,104px);font-weight:var(--dp-typography-weight-display);line-height:.92;letter-spacing:-.045em}
+a{color:inherit;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px}a:hover{background:var(--dp-color-field-support)}
+.note{background:var(--dp-color-field-support);border-bottom:var(--dp-border-rule) solid var(--dp-color-ink);padding:12px var(--dp-spacing-gutter);font-size:var(--dp-typography-label);font-weight:var(--dp-typography-weight-label)}
+.hero{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(0,1fr);border-bottom:var(--dp-border-rule) solid var(--dp-color-ink)}
+.plane-text{position:relative;min-width:0;padding:clamp(28px,5cqi,64px) var(--dp-spacing-gutter) 28px;border-right:var(--dp-border-rule) solid var(--dp-color-ink)}
+.tri{position:absolute;top:0;right:0;width:clamp(56px,10cqi,128px);aspect-ratio:1;background:var(--dp-color-field);clip-path:polygon(0 0,100% 0,100% 100%);pointer-events:none}
+.plane-red{background:var(--dp-color-accent);display:grid;place-items:center;padding:32px var(--dp-spacing-gutter)}
+.bar{margin:0}
+.mut{color:#3d3d3d;font-size:var(--dp-typography-caption);font-weight:var(--dp-typography-weight-reading)}
+.plane-text .mut{margin:14px 0 0}
+input,select{font:inherit;font-size:16px;font-weight:var(--dp-typography-weight-label);padding:10px 12px;border:var(--dp-border-rule-compact) solid var(--dp-color-ink);border-radius:var(--dp-radius-square);background:#fff;color:var(--dp-color-ink);max-width:100%}
+#q{width:100%;padding:16px;font-size:var(--dp-typography-body);border-width:var(--dp-border-rule)}
+input[type=checkbox]{width:22px;height:22px;padding:0;accent-color:#000;vertical-align:-5px;margin:0 6px 0 0}
+.sm{width:116px}.md{width:200px}
+label{font-size:var(--dp-typography-label);font-weight:var(--dp-typography-weight-label)}
+button{font:inherit;font-size:var(--dp-typography-body);font-weight:var(--dp-typography-weight-action);cursor:pointer;border:var(--dp-border-rule) solid var(--dp-color-ink);border-radius:var(--dp-radius-square);background:#fff;color:var(--dp-color-ink);padding:12px 22px;box-shadow:6px 6px 0 var(--dp-color-ink)}
+button:hover:not(:disabled){background:var(--dp-color-field-support)}
+button:active:not(:disabled){transform:translate(6px,6px);box-shadow:0 0 0 var(--dp-color-ink)}
+button:disabled{cursor:wait;background:var(--dp-color-quiet);color:#3d3d3d}
+button.blue{background:var(--dp-color-field);color:var(--dp-color-on-field)}
+button.blue:hover:not(:disabled){background:var(--dp-color-ink);color:var(--dp-color-on-field)}
+button.ghost{padding:6px 12px;font-size:var(--dp-typography-label);border-width:var(--dp-border-rule-compact);box-shadow:4px 4px 0 var(--dp-color-ink)}
+button.ghost:active:not(:disabled){transform:translate(4px,4px)}
+button.circle{width:clamp(150px,16cqi,220px);aspect-ratio:1;padding:0;border-radius:var(--dp-radius-circle);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:22px;box-shadow:8px 8px 0 var(--dp-color-ink)}
+button.circle:active:not(:disabled){transform:translate(8px,8px)}
+button.circle .arrow{font-size:40px;line-height:1}
+:focus-visible{outline:4px solid var(--dp-color-ink);outline-offset:3px}
+input:focus-visible,select:focus-visible{outline-color:var(--dp-color-field);outline-offset:2px}
+.ctl{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;padding:18px var(--dp-spacing-gutter);background:var(--dp-color-field-support);border-bottom:var(--dp-border-rule) solid var(--dp-color-ink)}
+#abar{background:var(--dp-color-quiet);border-top:var(--dp-border-rule) solid var(--dp-color-ink)}
+details{background:#fff;border-bottom:var(--dp-border-rule) solid var(--dp-color-ink)}
+summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px var(--dp-spacing-gutter);font-size:var(--dp-typography-body);font-weight:var(--dp-typography-weight-action)}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";font-size:32px;font-weight:800;line-height:1}
+details[open]>summary::after{content:"\2212"}
+details[open]>summary{border-bottom:var(--dp-border-rule-compact) solid var(--dp-color-ink)}
+.fitgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px 20px;padding:18px var(--dp-spacing-gutter) 6px}
+.fitgrid input{width:76px}
+details>p.mut{margin:0;padding:6px var(--dp-spacing-gutter) 18px}
+.card{background:#fff;border:0;border-bottom:var(--dp-border-rule) solid var(--dp-color-ink);padding:20px var(--dp-spacing-gutter) 24px;margin:0;overflow-x:auto}
+details .card{border-bottom:0;padding-top:12px}
+.scroll{overflow-x:auto}
+table{width:100%;min-width:900px;border-collapse:collapse;font-size:16px}
+th{background:var(--dp-color-ink);color:var(--dp-color-on-field);font-size:var(--dp-typography-label);font-weight:var(--dp-typography-weight-label);letter-spacing:.04em;text-transform:uppercase;text-align:left;padding:12px}
+td{padding:12px;text-align:left;vertical-align:top;border-bottom:var(--dp-border-rule-compact) solid var(--dp-color-ink)}
+.best td{background:var(--dp-color-field-support);font-weight:var(--dp-typography-weight-action)}
+.best td:first-child{box-shadow:inset 10px 0 0 var(--dp-color-ink)}
+tr.more td{background:var(--dp-color-ground);padding:8px 12px}
+tr.sub td{background:var(--dp-color-ground)}tr.sub td:first-child{box-shadow:inset 10px 0 0 var(--dp-color-field)}tr.sub .thumb{opacity:.85}
+.tot{font-size:22px;font-weight:var(--dp-typography-weight-display);letter-spacing:-.02em}
+.thumb{width:72px;height:72px;flex:none;display:flex;align-items:center;justify-content:center;object-fit:contain;background:#fff;border:var(--dp-border-rule-compact) solid var(--dp-color-ink)}
+.thumb svg{width:44px;height:60px}
+.sale{display:inline-block;background:var(--dp-color-field-support);color:var(--dp-color-ink);border:2px solid var(--dp-color-ink);padding:0 6px;font-weight:var(--dp-typography-weight-action)}
+.tag{display:inline-block;margin-left:8px;background:var(--dp-color-ink);color:var(--dp-color-on-field);font-size:var(--dp-typography-caption);font-weight:var(--dp-typography-weight-action);letter-spacing:.04em;text-transform:uppercase;padding:0 8px}
+.arow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:var(--dp-border-rule-compact) solid var(--dp-color-ink)}
+.cats{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;background:var(--dp-color-ink);border-bottom:var(--dp-border-rule) solid var(--dp-color-ink)}
+button.cat{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;padding:14px;border:0;box-shadow:none;background:#fff;color:var(--dp-color-ink);font-size:var(--dp-typography-label);font-weight:var(--dp-typography-weight-action);text-align:left}
+button.cat:hover:not(:disabled){background:var(--dp-color-field-support)}
+button.cat:active:not(:disabled){transform:none;background:var(--dp-color-accent);color:var(--dp-color-on-field)}
+button.cat[aria-pressed=true]{background:var(--dp-color-ink);color:var(--dp-color-on-field)}
+button.cat[aria-pressed=true]:hover:not(:disabled){background:var(--dp-color-field);color:var(--dp-color-on-field)}
+button.cat .cn{font-weight:800;text-align:right}
+button.cat:focus-visible{outline:4px solid var(--dp-color-field);outline-offset:-4px}
+button.cat[aria-pressed=true]:focus-visible{outline-color:var(--dp-color-field-support)}
+tr.band td{background:var(--dp-color-field);color:var(--dp-color-on-field);border-bottom:0;padding:10px 12px;font-size:22px;font-weight:var(--dp-typography-weight-display);letter-spacing:-.02em}
+tr.band .n{margin-left:14px;font-size:var(--dp-typography-label);font-weight:var(--dp-typography-weight-label);letter-spacing:.02em}
+th button.sortbtn{padding:0;border:0;box-shadow:none;background:none;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;text-decoration:underline;text-underline-offset:4px;cursor:pointer}
+th button.sortbtn:hover:not(:disabled){background:var(--dp-color-field-support);color:var(--dp-color-ink)}
+th button.sortbtn:active:not(:disabled){transform:none}
+th button.sortbtn:focus-visible{outline-color:var(--dp-color-field-support)}
+.thumb{background:hsl(var(--h) 30% 90%)}.thumb svg{color:hsl(var(--h) 45% 32%)}
+@media (max-width:1050px){.cats{grid-template-columns:repeat(4,1fr)}.hero{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}button.circle{width:clamp(140px,20cqi,190px)}.ctl{gap:10px 18px}}
+@media (max-width:720px){table{display:block;min-width:0}table tbody{display:block}
+tr.hd{display:none}tr.band{display:block}tr.band td{display:block}tr.more{display:block}tr.more td{display:block;border-bottom:var(--dp-border-rule-compact) solid var(--dp-color-ink)}
+tr.item{display:grid;grid-template-columns:84px 1fr 1fr;column-gap:6px;padding:8px 0;border-bottom:var(--dp-border-rule-compact) solid var(--dp-color-ink)}
+tr.item td{display:block;border:0;padding:4px 8px;background:transparent}
+tr.item td[data-l]::before{content:attr(data-l);display:block;font-size:12px;font-weight:var(--dp-typography-weight-label);letter-spacing:.04em;text-transform:uppercase;color:#3d3d3d}
+tr.item td:nth-child(1){grid-column:1;grid-row:1/span 4}
+tr.item td:nth-child(2){grid-column:2/4;grid-row:1}
+tr.item td:nth-child(3){grid-column:2;grid-row:2}tr.item td:nth-child(4){grid-column:3;grid-row:2}
+tr.item td:nth-child(5){grid-column:2;grid-row:3}tr.item td:nth-child(6){grid-column:3;grid-row:3}
+tr.item td:nth-child(7){grid-column:2/4;grid-row:4}
+tr.best{background:var(--dp-color-field-support);box-shadow:inset 10px 0 0 var(--dp-color-ink)}.best td:first-child{box-shadow:none}
+.cats{grid-template-columns:repeat(2,1fr)}.hero{grid-template-columns:1fr}.plane-text{border-right:0;border-bottom:var(--dp-border-rule) solid var(--dp-color-ink)}.plane-red{padding:36px var(--dp-spacing-gutter)}button.circle{width:176px}.fitgrid{grid-template-columns:1fr}.ctl{align-items:flex-start}}
+</style>
+</head>
+<body>
+<div class="note">Prototype with sample data. Every price, size, measurement and listing below is made up to show the layout. The garment pictures are drawn stand-ins; the real app shows each store’s own product photo.</div>
+<header class="hero"><section class="plane-text"><span class="tri" aria-hidden="true"></span><h1>Price Scout</h1><div class="bar"><input id="q" type="search" value="momotaro" placeholder="Search a product, e.g. Momotaro 0705" aria-label="Search a product"></div><p class="mut">Try “momotaro”, “3sixteen” or “oni”, or pick a category to browse it. Searches: Blue Owl, Self Edge, Denimio, Okayama Denim, Hinoya, Rodeo Japan, dc4 and 17 more.</p></section><aside class="plane-red"><button id="go" class="circle" type="button"><span>Search</span><span class="arrow" aria-hidden="true">→</span></button></aside></header>
+<nav class="cats" id="cats" aria-label="Garment categories"></nav>
+<main>
+<div class="ctl" id="ctl" hidden>
+<label>Sort by <select id="sort"><option value="total">Price, low to high: est. total</option><option value="usd">Price, low to high: item price</option></select></label>
+<label>My size <input id="size" class="sm" list="sizes" placeholder="e.g. 32"></label><datalist id="sizes"></datalist>
+<label><input type="checkbox" id="stock"> In stock only</label>
+<label><input type="checkbox" id="sale"> On sale only</label></div>
+<details id="fit" hidden open><summary id="fitsum">Fit measurements (inches)</summary>
+<div class="fitgrid fit"><label>Waist <input id="min_waist" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_waist" type="number" step="0.25" min="0" placeholder="max"></label><label>Thigh <input id="min_thigh" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_thigh" type="number" step="0.25" min="0" placeholder="max"></label><label>Front rise <input id="min_front_rise" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_front_rise" type="number" step="0.25" min="0" placeholder="max"></label><label>Back rise <input id="min_back_rise" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_back_rise" type="number" step="0.25" min="0" placeholder="max"></label><label>Knee <input id="min_knee" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_knee" type="number" step="0.25" min="0" placeholder="max"></label><label>Leg opening <input id="min_leg_opening" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_leg_opening" type="number" step="0.25" min="0" placeholder="max"></label></div>
+<p class="mut">Garment measurements read from each product’s size chart. Listings without a readable chart are hidden while a range is set. Try waist 16–17 and thigh up to 12.3.</p></details>
+<div id="out"></div>
+<div class="ctl" id="abar" hidden>
+<span>Alert me when est. total is at or below $</span><input id="amax" class="sm" type="number" min="0" step="1" placeholder="any" aria-label="Alert price">
+<input id="aemail" class="md" type="email" placeholder="email (optional)" aria-label="Email">
+<button id="mkalert" class="blue" type="button">Set alert</button><span class="mut" id="amsg">Uses your size and fit filters. Leave the price blank to be alerted when it’s in stock.</span></div>
+<details id="alerts" hidden><summary>Your price alerts</summary><div class="card"><div id="alist"></div>
+<p class="mut">The real app checks alerts every hour and emails you.</p></div></details>
+</main>
+<script>
+const RATES={USD:1,JPY:150,EUR:0.92};
+const STORES={'Blue Owl':{origin:'US',cur:'USD',free:300},'Self Edge':{origin:'US',cur:'USD',free:300},'Okayama Denim':{origin:'JP',cur:'JPY'},'Denimio':{origin:'JP',cur:'USD'},'dc4':{origin:'EU',cur:'EUR'},'Rodeo Japan':{origin:'US',cur:'USD'},'Hinoya':{origin:'JP',cur:'JPY'}};
+const HUE={Bottoms:222,Tops:35,Outerwear:150,Footwear:25,Bags:330,Accessories:280,Other:200};
+const sz=spec=>{const [a,b]=spec.split('|');const f=t=>(t||'').trim()?t.trim().split(/\s+/):[];return f(a).map(s=>[s,true]).concat(f(b).map(s=>[s,false]))};
+const P=(cat,site,title,price,sizes,x={})=>({cat,site,title,price,sizes:sz(sizes),h:HUE[cat]+((title.length*7)%24-12),...STORES[site],...x});
+const CATALOG=[
+ P('Bottoms','Blue Owl','Momotaro: 0705SP Selvedge Jeans, Tight Tapered',330,'30 31 32 33 34 36'),
+ P('Bottoms','Self Edge','Momotaro: 0705SP Selvedge Jeans, Tight Tapered',345,'32 33|30 34'),
+ P('Bottoms','Okayama Denim','Momotaro: 0705SP Selvedge Jeans, Tight Tapered',41800,'29 30 32 34'),
+ P('Bottoms','Denimio','Momotaro: 0705SP Selvedge Jeans, Tight Tapered',312,'31 32 33',{was:340}),
+ P('Bottoms','dc4','Momotaro: 0705SP Selvedge Jeans, Tight Tapered',289,'30 32',{was:339}),
+ P('Bottoms','Hinoya','MOMOTARO: Jeans - 0705SP Selvedge (Tight Tapered)',40500,'30 32'),
+ P('Bottoms','Rodeo Japan','Momotaro: 0705SP Selvedge Jeans (sold out)',355,'|30 31 32',{out:1}),
+ P('Bottoms','Blue Owl','3sixteen: 100x Classic Straight Selvedge Jeans',235,'30 32 34 36'),
+ P('Bottoms','Self Edge','3sixteen: 100x Classic Straight Selvedge Jeans',245,'31 32',{was:275}),
+ P('Bottoms','Hinoya','3sixteen: 100x Classic Straight Selvedge Jeans',29800,'30 32',{nochart:1}),
+ P('Bottoms','Blue Owl','ONI Denim: 622 Secret Denim Tight Tapered',395,'30 31 32'),
+ P('Bottoms','Okayama Denim','ONI Denim: 622 Secret Denim Tight Tapered',46200,'32 34',{was:52800}),
+ P('Bottoms','Denimio','ONI Denim: 622 Secret Denim Tight Tapered',372,'30 32 33'),
+ P('Tops','Blue Owl','Momotaro: Indigo Dyed Pocket Tee',95,'S M L XL'),
+ P('Tops','Self Edge','Momotaro: Indigo Dyed Pocket Tee',110,'M L|S XL'),
+ P('Tops','Okayama Denim','Momotaro: Indigo Dyed Pocket Tee',11800,'S M L'),
+ P('Tops','Blue Owl','Fullcount: Chambray Shirt in Washed Blue',355,'S M L XL',{was:400}),
+ P('Tops','Blue Owl','Blue Blue Japan: Organic Hand-Dyed Zip Hoodie in Indigo',335,'S M L'),
+ P('Tops','dc4','Merz b. Schwanen: Loopwheeled Crewneck Sweatshirt',168,'M L XL',{was:210}),
+ P('Outerwear','Blue Owl','Momotaro: Natural Indigo Work Jacket',450,'S M L'),
+ P('Outerwear','Self Edge','Momotaro: Natural Indigo Work Jacket',480,'M L XL'),
+ P('Outerwear','Okayama Denim','Momotaro: Natural Indigo Work Jacket',62000,'S M'),
+ P('Outerwear','Blue Owl','FDMTL: Haori Jacket in Indigo 3-Year Wash',415,'S M L XL'),
+ P('Outerwear','Blue Owl','visvim: Varsity Jacket in Grey',3495,'M L XL'),
+ P('Footwear','Blue Owl','John Lofgren: Combat Boot in Horween Chromexcel Black',985,'8 9 10 11 12'),
+ P('Footwear','Self Edge','John Lofgren: Combat Boot in Horween Chromexcel Black',1020,'9 10|8 11'),
+ P('Footwear','Hinoya','Unmarked: All-Season Loafer in Black',64000,'8 9 10'),
+ P('Footwear','dc4','Paraboot: Michael Derby in Black',389,'41 42 43'),
+ P('Accessories','Blue Owl','Momotaro: Leather Belt',125,'30 32 34 36'),
+ P('Accessories','Okayama Denim','Momotaro: Leather Belt',14500,'32 34'),
+ P('Accessories','Blue Owl','Blue Blue Japan: Blue Maru Socks in Black',25,'One Size'),
+ P('Bags','Blue Owl','Momotaro: Canvas Tote Bag',185,'One Size'),
+ P('Bags','Okayama Denim','Momotaro: Canvas Tote Bag',21000,'One Size'),
+ P('Bags','Self Edge','Porter Yoshida & Co.: Tanker Shoulder Bag',440,'One Size')
+];
+const ICON={
+ Bottoms:'<svg viewBox="0 0 48 64" aria-hidden="true"><path d="M11 4h26l4 55H27l-3-31-3 31H7z" fill="currentColor"/><path d="M24 10v18" stroke="#f5f4ee" stroke-width="1.5" stroke-dasharray="2 1.5"/></svg>',
+ Tops:'<svg viewBox="0 0 48 64" aria-hidden="true"><path d="M17 6c1 4 4 6 7 6s6-2 7-6l11 7 5 11-8 4-3-6v34H14V22l-3 6-8-4 5-11z" fill="currentColor"/></svg>',
+ Outerwear:'<svg viewBox="0 0 48 64" aria-hidden="true"><path d="M15 5h18l11 8 3 32-7 2-2-20v32H10V27L8 47l-7-2 3-32z" fill="currentColor"/><path d="M24 5v54" stroke="#f5f4ee" stroke-width="1.5"/></svg>',
+ Footwear:'<svg viewBox="0 0 48 64" aria-hidden="true"><path d="M13 8h17v26l13 6c3 1 4 3 4 6v8H9z" fill="currentColor"/><path d="M9 52h38" stroke="#f5f4ee" stroke-width="1.5"/></svg>',
+ Bags:'<svg viewBox="0 0 48 64" aria-hidden="true"><path d="M8 24h32l3 36H5z" fill="currentColor"/><path d="M16 24v-6a8 8 0 0 1 16 0v6" fill="none" stroke="currentColor" stroke-width="3"/></svg>',
+ Accessories:'<svg viewBox="0 0 48 64" aria-hidden="true"><rect x="3" y="27" width="42" height="10" fill="currentColor"/><rect x="17" y="21" width="14" height="22" fill="none" stroke="currentColor" stroke-width="3"/></svg>',
+ Other:'<svg viewBox="0 0 48 64" aria-hidden="true"><circle cx="24" cy="32" r="16" fill="currentColor"/></svg>'};
+const q4=x=>Math.round(x*4)/4;
+function measOf(d){
+  const tight=/Tapered/.test(d.title),v=(d.h%5)*0.125;
+  return d.sizes.filter(s=>!isNaN(+s[0])).map(([lab,ok])=>{const n=+lab;return {size:lab,in_stock:ok,
+    waist:q4(n/2+0.5),thigh:q4(11.6+(n-30)*0.3+v),front_rise:q4(10.6+v),back_rise:q4(14.4+v),
+    knee:q4((tight?7.9:8.6)+(n-30)*0.1),leg_opening:q4((tight?6.9:7.8)+(n-30)*0.05)}});
+}
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money=(v,c)=>new Intl.NumberFormat('en-US',{style:'currency',currency:c,maximumFractionDigits:c==='JPY'?0:2}).format(v);
+const usdOrBlank=v=>v==null?'n/a':money(v,'USD');
+const norm=s=>s.toLowerCase().replace(/\s+/g,'');
+const sizeMatch=(label,want)=>[label].concat(label.split(/\s*[\/,]\s*|\s+x\s+/i)).some(p=>norm(p)===norm(want));
+const hasSize=(o,w)=>!w||o.sizes.some(s=>s[1]&&sizeMatch(s[0],w));
+const FIT=[['waist','Waist'],['thigh','Thigh'],['front_rise','Front rise'],['back_rise','Back rise'],['knee','Knee'],['leg_opening','Leg opening']];
+const num=id=>{const v=parseFloat($(id).value);return isNaN(v)?null:v};
+const fitObj=()=>{const o={};FIT.forEach(([k])=>{const lo=num('min_'+k),hi=num('max_'+k);if(lo!=null||hi!=null)o[k]=[lo,hi]});return o};
+const fitRanges=()=>Object.entries(fitObj());
+const fitSizes=(o,w,rs)=>o.measures.filter(m=>m.in_stock&&(!w||sizeMatch(m.size,w))&&rs.every(([k,[lo,hi]])=>m[k]!=null&&(lo==null||m[k]>=lo)&&(hi==null||m[k]<=hi))).map(m=>m.size);
+const fitOk=(o,w,rs)=>rs.length?fitSizes(o,w,rs).length>0:hasSize(o,w);
+const fitText=f=>Object.entries(f||{}).map(([k,[lo,hi]])=>' · '+k.replace('_',' ')+' '+(lo!=null&&hi!=null?lo+'–'+hi:lo!=null?'≥ '+lo:'≤ '+hi)+'″').join('');
+const q=$('q'),go=$('go'),out=$('out'),sortSel=$('sort'),stockBox=$('stock'),saleBox=$('sale'),sizeIn=$('size'),amax=$('amax');
+let DATA=null,LASTQ='',ALERTS=[];const OPEN=new Set();
+const STOP=new Set(['jeans','jean','pants','the','a','and','in','of','new','restock','sold','out']);
+const gkey=t=>t.toLowerCase().replace(/[^a-z0-9]+/g,' ').split(' ').filter(w=>w&&!STOP.has(w)).sort().join(' ');
+function compute(d){
+  const usd=d.price/RATES[d.cur],dom=d.origin==='US';
+  let ship=dom?10:35;if(d.free&&usd>=d.free)ship=0;
+  const duty=dom?0:usd*0.166,was=d.was?d.was/RATES[d.cur]:null;
+  return {...d,ships_from_name:({US:'United States',JP:'Japan',EU:'Germany'})[d.origin],gid:gkey(d.title),currency:d.cur,category:d.cat,usd,ship,duty,total:usd+ship+duty,wasUsd:was,sold_out:!!d.out,
+    measures:(d.cat==='Bottoms'&&!d.nochart)?measOf(d):[]};
+}
+function matches(d,t){
+  const toks=t.toLowerCase().split(/\W+/).filter(w=>w.length>1),s=(d.site+' '+d.title).toLowerCase();
+  return !toks.length||toks.filter(w=>s.includes(w)).length/toks.length>=0.6;
+}
+const CATS=['Bottoms','Tops','Outerwear','Footwear','Bags','Accessories','Other'];
+let CAT='All';
+const fitActive=()=>CAT==='All'||CAT==='Bottoms';
+const cmp=key=>(a,b)=>(a.sold_out-b.sold_out)||((a[key]==null?1e18:a[key])-(b[key]==null?1e18:b[key]));
+function buildCats(){
+  $('cats').innerHTML=['All'].concat(CATS).map(c=>`<button type="button" class="cat" data-cat="${c}" aria-pressed="false"><span class="nm">${c}</span><span class="cn"></span></button>`).join('');
+}
+function updateCats(base){
+  $('cats').querySelectorAll('.cat').forEach(b=>{
+    const c=b.dataset.cat,on=c===CAT;
+    b.setAttribute('aria-pressed',on);
+    b.querySelector('.nm').textContent=(on?'✓ ':'')+c;
+    const n=!base?null:(DATA.browse&&c!==DATA.category)?null:(c==='All'?base.length:base.filter(o=>o.category===c).length);
+    b.querySelector('.cn').textContent=n==null?'':n;
+  });
+}
+function filtered(){
+  const want=sizeIn.value.trim(),ranges=fitActive()?fitRanges():[];
+  const base=DATA.offers.filter(o=>!(stockBox.checked&&o.sold_out)&&!(saleBox.checked&&!o.was)&&fitOk(o,want,ranges));
+  return {want,ranges,base};
+}
+function render(){
+  if(!DATA)return;
+  const key=sortSel.value,{want,ranges,base}=filtered();
+  const inCat=o=>CAT==='All'||o.category===CAT;
+  $('fit').hidden=!fitActive();
+  $('fitsum').textContent='Fit measurements (inches)'+(ranges.length?' · '+ranges.length+' active':'');
+  updateCats(base);
+  const offers=base.filter(inCat).sort(cmp(key));
+  const lowTag=key==='total'?'Lowest total':'Lowest price';
+  const row=(o,first,sub)=>{
+    const item=o.usd==null?'n/a':(o.currency==='USD'?'':'≈ ')+money(o.usd,'USD');
+    const local=money(o.price,o.currency)+(o.currency==='USD'?'':' '+o.currency)+(o.assumed?'*':'');
+    const was=o.was?`<div class="mut"><s>${esc(money(o.was,o.currency))}</s> <span class="sale">−${Math.round((1-o.price/o.was)*100)}%</span></div>`:'';
+    const inStock=o.sizes.filter(s=>s[1]).map(s=>s[0]).join(' · '),fits=ranges.length?fitSizes(o,want,ranges):null;
+    const img=`<div class="thumb" style="--h:${o.h}">${ICON[o.category]}</div>`;
+    return `<tr class="item ${first?'best':''}${sub?' sub':''}"><td>${img}</td>
+      <td><a href="#" onclick="return false">${esc(o.title)}</a>${first?`<span class="tag">${lowTag}</span>`:''}<div class="mut">${esc(o.site)}${fits?(fits.length?' · Fits: '+esc(fits.join(' · ')):''):(inStock?' · Sizes: '+esc(inStock):'')}</div></td>
+      <td class="tot" data-l="Est. total">${usdOrBlank(o.total)}</td><td data-l="Item (USD)">${esc(item)}${was}</td><td data-l="Shipping">${usdOrBlank(o.ship)}</td><td data-l="Duty">${usdOrBlank(o.duty)}</td><td data-l="Ships from">${esc(o.ships_from_name||o.ships_from||'Unknown')}</td><td data-l="Local price">${esc(local)}</td></tr>`};
+  const byGid=new Map();
+  offers.forEach((o,i)=>{const g=o.gid||('x'+i);if(!byGid.has(g))byGid.set(g,[]);byGid.get(g).push(o)});   // offers are already sorted, so l[0] is the cheapest in-stock store for the current filters
+  const prods=[...byGid.entries()],nProd=prods.length;
+  const groups=(CAT==='All'?CATS:[CAT]).map(c=>[c,prods.filter(([,l])=>l[0].category===c)]).filter(g=>g[1].length);
+  const body=groups.map(([c,list])=>`<tr class="band"><td colspan="8">${esc(c)}<span class="n">${list.length} ${list.length===1?'product':'products'} · cheapest first</span></td></tr>`
+    +list.map(([gid,l],i)=>{
+      const head=row(l[0],i===0&&!l[0].sold_out),n=l.length-1;
+      if(!n)return head;
+      const open=OPEN.has(gid);
+      return head+`<tr class="more"><td colspan="8"><button type="button" class="ghost" data-more="${esc(gid)}" aria-expanded="${open}">${open?'Hide':'See'} ${n} other ${n===1?'store':'stores'}</button></td></tr>`
+        +(open?l.slice(1).map(o=>row(o,false,true)).join(''):'');
+    }).join('')).join('');
+  const th=(k,label)=>`<th aria-sort="${key===k?'ascending':'none'}"><button type="button" class="sortbtn" data-sort="${k}" title="Sort cheapest first by ${esc(label)}">${label}${key===k?' ▲':''}</button></th>`;
+  const assumed=DATA.offers.some(o=>o.assumed),scope=DATA.offers.filter(inCat);
+  const noData=scope.filter(o=>ranges.length?!o.measures.length:!o.sizes.length).length;
+  const shown=DATA.browse
+    ?`${nProd} ${esc(DATA.category)} ${nProd===1?'product':'products'}, cheapest first${DATA.truncated?` (the ${DATA.offers.length} cheapest of ${DATA.total_matches.toLocaleString()}; type a product name to search them all)`:''}`
+    :`${nProd} ${nProd===1?'product':'products'}, cheapest first${DATA.truncated?` (the ${DATA.offers.length} cheapest of ${DATA.total_matches.toLocaleString()})`:''}`;
+  out.innerHTML=`<div class="card">`+(offers.length
+    ?`<p class="mut">${shown}${want?' · size '+esc(want)+' in stock':''}${ranges.length?' · matching your fit measurements':''}${noData&&(want||ranges.length)?' · '+noData+' hidden: no '+(ranges.length?'measurement':'size')+' data':''}</p>
+    <table><tr class="hd"><th></th><th>Product</th>${th('total','Est. total')}${th('usd','Item (USD)')}<th>Shipping</th><th>Duty</th><th>Ships from</th><th>Local price</th></tr>${body}</table>
+    <p class="mut">Est. total = item + estimated shipping + import duty, assuming delivery to the US. Shipping and duty are flat estimates (edit them per store in sites.json); check each store at checkout. Sold-out items are listed last.</p>`
+    :`<p>${DATA.browse?'No '+esc(DATA.category)+' listings match your filters.':'No matching results found.'}</p>`)
+    +(assumed?'<p class="mut">* Currency not detected, so USD is assumed. Set "currency" for that store in sites.json.</p>':'')
+    +(DATA.notes.length?`<p class="mut">${DATA.notes.map(esc).join(' · ')}</p>`:'')+'</div>';
+}
+function showHint(){
+  DATA=null;$('ctl').hidden=true;$('fit').hidden=true;$('abar').hidden=true;updateCats(null);
+  out.innerHTML='<div class="card"><p>Type a product above, or pick a category to browse its cheapest listings.</p></div>';
+}
+function load(term,cat){
+  const offers=CATALOG.filter(d=>cat?d.cat===cat:matches(d,term)).map(compute).sort(cmp('total'));
+  DATA={offers,notes:[],browse:!term,category:cat||null,truncated:false,total_matches:offers.length};LASTQ=term;
+  const set=new Set();offers.forEach(o=>o.sizes.forEach(s=>s[1]&&set.add(s[0])));
+  $('sizes').innerHTML=[...set].sort((a,b)=>parseFloat(a)-parseFloat(b)||a.localeCompare(b)).slice(0,80).map(s=>`<option value="${esc(s)}">`).join('');
+  const c=offers.filter(o=>(CAT==='All'||o.category===CAT)&&!o.sold_out&&fitOk(o,sizeIn.value.trim(),fitActive()?fitRanges():[])).map(o=>o.total);
+  amax.value=c.length?Math.floor(Math.min(...c)*0.9):'';
+  $('ctl').hidden=false;$('abar').hidden=!term;render();
+}
+function search(){
+  const term=q.value.trim();
+  if(term){load(term,null);return}
+  if(CAT!=='All'){load('',CAT);return}
+  showHint();
+}
+function pickCat(c){
+  CAT=c;const term=q.value.trim();
+  if(DATA&&!DATA.browse&&term&&term===LASTQ){render();return}
+  if(DATA&&DATA.browse&&!term&&DATA.category===c){render();return}
+  search();
+}
+function bestFor(a){
+  const c=CATALOG.filter(d=>matches(d,a.query)&&(!a.category||d.cat===a.category)).map(compute)
+    .filter(o=>!o.sold_out&&fitOk(o,a.size,Object.entries(a.fit||{})));
+  return c.sort((x,y)=>x.total-y.total)[0]||null;
+}
+function renderAlerts(){
+  $('alerts').hidden=!ALERTS.length;
+  $('alist').innerHTML=ALERTS.map((a,i)=>{
+    const b=bestFor(a),hit=b&&(a.max==null||b.total<=a.max);
+    const cond=esc(a.query)+(a.category?' · '+esc(a.category):'')+(a.size?' · size '+esc(a.size):'')+esc(fitText(a.fit))+' · '+(a.max!=null?'≤ '+money(a.max,'USD'):'any price, in stock');
+    const st=hit?`<b>Alert hit:</b> ${money(b.total,'USD')} at ${esc(b.site)}`:b?`Watching. Best now ${money(b.total,'USD')} at ${esc(b.site)}`:'Watching. Nothing in stock matches yet.';
+    return `<div class="arow"><div>${cond}<div class="mut">${st}</div></div><button class="ghost" data-i="${i}">Delete</button></div>`}).join('');
+  document.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{ALERTS.splice(+b.dataset.i,1);renderAlerts()});
+}
+$('mkalert').onclick=()=>{
+  ALERTS.unshift({query:LASTQ,category:CAT==='All'?'':CAT,size:sizeIn.value.trim(),fit:fitActive()?fitObj():{},max:amax.value===''?null:+amax.value});
+  $('amsg').textContent='Alert created (prototype: kept in this page only).';$('alerts').open=true;renderAlerts();
+};
+go.onclick=search;q.addEventListener('keydown',e=>{if(e.key==='Enter')search()});
+$('cats').onclick=e=>{const b=e.target.closest('[data-cat]');if(b)pickCat(b.dataset.cat)};
+out.onclick=e=>{const m=e.target.closest('[data-more]');if(m){const g=m.dataset.more;OPEN.has(g)?OPEN.delete(g):OPEN.add(g);render();const n=out.querySelector('[data-more="'+g+'"]');if(n)n.focus();return}const b=e.target.closest('[data-sort]');if(!b)return;sortSel.value=b.dataset.sort;render();const n=out.querySelector('[data-sort="'+b.dataset.sort+'"]');if(n)n.focus()};
+['sort','stock','sale'].forEach(id=>$(id).onchange=render);sizeIn.oninput=render;document.querySelectorAll('.fit input').forEach(i=>i.oninput=render);
+buildCats();updateCats(null);search();
+</script>
+</body>
+</html>
