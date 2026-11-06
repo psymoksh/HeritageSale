@@ -5,7 +5,18 @@
   },
   {
     "name": "Self Edge",
-    "base_url": "https://www.selfedge.com"
+    "base_url": "https://www.selfedge.com",
+    "type": "html",
+    "origin": "US",
+    "currency": "USD",
+    "search_url": "https://www.selfedge.com/index.php?route=product/search&search={q}",
+    "item": "div:has(> div.serach-view-more)",
+    "title": "a[tabindex='-1'] > span.block:not(.font-medium)",
+    "price": "a[tabindex='-1'] > span.font-medium",
+    "link": "a[tabindex='-1']",
+    "image": "img",
+    "sizes": "ul li",
+    "size_soldout_class": "opacity-50"
   },
   {
     "name": "Blue in Green",
@@ -53,7 +64,12 @@
   },
   {
     "name": "Brass Tacks Provisions",
-    "base_url": "https://www.brasstacksprovisions.com"
+    "base_url": "https://www.brasstacksprovisions.com",
+    "type": "square",
+    "square_owner_id": "141196038",
+    "square_site_id": "556598488500095347",
+    "origin": "US",
+    "currency": "USD"
   },
   {
     "name": "Manready Mercantile",
@@ -89,10 +105,24 @@
   },
   {
     "name": "Celluloid",
-    "base_url": "https://www.celluloid1984.com"
+    "base_url": "https://www.celluloid1984.com",
+    "type": "html",
+    "origin": "JP",
+    "currency": "JPY",
+    "search_url": "https://www.celluloid1984.com/?mode=srh&keyword={q}",
+    "search_encoding": "euc-jp",
+    "item": "li.productlist_list",
+    "title": ".item_name",
+    "price": ".item_price",
+    "link": "a[href*='pid=']",
+    "image": "img.item_img"
   },
   {
     "name": "HeritageQualityGoods",
     "base_url": "https://heritagequalitygoods.com"
+  },
+  {
+    "name": "Reggieshop",
+    "base_url": "https://reggieshop.com"
   }
 ]

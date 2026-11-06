@@ -30,9 +30,17 @@ def allowed(url):
     p = urlparse(url)
     root = f"{p.scheme}://{p.netloc}"
     if root not in _robots:
+        # Fetched with requests (certifi CA bundle): urllib's own rp.read() fails TLS on a python.org install
+        # without "Install Certificates", and that failure used to mean "no robots.txt, allow everything".
         rp = urllib.robotparser.RobotFileParser(root + "/robots.txt")
         try:
-            rp.read()
+            r = requests.get(root + "/robots.txt", headers=HEADERS, timeout=10)
+            if r.status_code in (401, 403):
+                rp.disallow_all = True
+            elif r.status_code >= 400:
+                rp.allow_all = True
+            else:
+                rp.parse(r.text.splitlines())
         except Exception:
             rp = None
         _robots[root] = rp
@@ -80,9 +88,21 @@ def from_selectors(soup, site, base):
         t, pr = el.select_one(site["title"]), el.select_one(site["price"])
         a = el.select_one(site.get("link", "a"))
         if t and pr and a and a.get("href"):
-            price = parse_price(pr.get_text(" ", strip=True))
+            text = pr.get_text(" ", strip=True)
+            price = parse_price(text)
+            if not price:  # yen / euro etc.: "30,000円(税込33,000円)" -> the first number, i.e. before Japanese tax
+                m = re.search(r"\d{1,3}(?:[,.]\d{3})+|\d+", text)
+                price = float(re.sub(r"[,.]", "", m.group(0))) if m else None
             if price:
-                out.append((t.get_text(" ", strip=True), price, urljoin(base, a["href"])))
+                extra = {}
+                img = el.select_one(site["image"]) if site.get("image") else None
+                if img and (img.get("src") or img.get("data-src")):
+                    extra["image"] = urljoin(base, img.get("src") or img.get("data-src"))
+                if site.get("sizes"):  # optional; "size_soldout_class" marks sizes that are out of stock
+                    soldout = site.get("size_soldout_class")
+                    extra["sizes"] = [[s.get_text(strip=True), soldout not in (s.get("class") or [])]
+                                      for s in el.select(site["sizes"]) if s.get_text(strip=True)]
+                out.append((t.get_text(" ", strip=True), price, urljoin(base, a["href"]), extra))
     return out
 
 
@@ -140,10 +160,58 @@ def get_catalog(base):
     return products
 
 
+def get_square_catalog(base, site):
+    """Square Online stores (no /products.json) serve their storefront catalog as JSON. Needs `square_owner_id` and
+    `square_site_id` in sites.json. Products are reshaped like Shopify's so from_shopify / measure_rows work unchanged."""
+    key = base + "#square"
+    hit = _catalog.get(key)
+    if hit and time.time() - hit[0] < 3600:
+        return hit[1]
+    url = f'{base}/app/store/api/v28/editor/users/{site["square_owner_id"]}/sites/{site["square_site_id"]}/products'
+    products = None
+    try:
+        if allowed(url):
+            products, page = [], 1
+            while page <= 25:  # 200 a page, up to 5,000 products
+                r = requests.get(url, params={"page": page, "per_page": 200, "include": "images,skus,categories"},
+                                 headers=HEADERS, timeout=20)
+                r.raise_for_status()
+                j = r.json()
+                for p in j["data"]:
+                    if p.get("visibility") != "visible":
+                        continue
+                    skus = (p.get("skus") or {}).get("data") or []
+                    variants = [{"option1": s.get("name") or "Default Title", "available": not s.get("sold_out"),
+                                 "price": (s.get("price") or {}).get("current") or 0,
+                                 "compare_at_price": (s.get("price") or {}).get("regular")} for s in skus]
+                    if not variants:
+                        pr = p.get("price") or {}
+                        variants = [{"option1": "Default Title", "price": pr.get("low") or 0,
+                                     "compare_at_price": pr.get("regular_low"),
+                                     "available": not (p.get("badges") or {}).get("out_of_stock")}]
+                    cats = [c.get("name", "") for c in (p.get("categories") or {}).get("data") or []]
+                    imgs = [i.get("absolute_url") for i in (p.get("images") or {}).get("data") or [] if i.get("absolute_url")]
+                    products.append({"title": p.get("name", ""), "vendor": "", "body_html": p.get("short_description"),
+                                     "product_type": cats[0] if cats else "", "tags": cats,
+                                     "url": p.get("absolute_site_link") or f'{base}/{p.get("site_link", "")}',
+                                     "options": [{"name": "Size"}] if any(v["option1"] != "Default Title" for v in variants)
+                                     else [{"name": "Title"}],
+                                     "variants": variants, "images": [{"src": imgs[0]}] if imgs else []})
+                pg = j.get("meta", {}).get("pagination", {})
+                if page >= pg.get("total_pages", page):
+                    break
+                page += 1
+    except Exception:
+        products = None
+    products = products or None
+    _catalog[key] = (time.time(), products)
+    return products
+
+
 def variant_sizes(p):
     """[[size label, in_stock], ...] from the product's Size option."""
     names = [o.get("name", "") for o in p.get("options", [])]
-    idx = next((i for i, n in enumerate(names) if "size" in n.lower()), None)
+    idx = next((i for i, n in enumerate(names) if "size" in n.lower() or "サイズ" in n), None)  # サイズ = size
     if idx is None and len(names) == 1 and names[0].lower() != "title":
         idx = 0
     if idx is None:
@@ -286,11 +354,14 @@ def from_shopify(base, products):
             continue
         v = min(pool, key=lambda x: float(x["price"]))
         price, was = float(v["price"]), float(v.get("compare_at_price") or 0)
-        title = f'{p.get("vendor", "")}: {p["title"]}' + ("" if live else " (sold out)")
+        vendor = p.get("vendor") or ""
+        if re.sub(r"\W", "", vendor.lower()) and re.sub(r"\W", "", vendor.lower()) in base.lower():
+            vendor = ""  # the store's own name as vendor (Reggieshop) says nothing; the brand is in the title
+        title = (f"{vendor}: " if vendor else "") + p["title"] + ("" if live else " (sold out)")
         tags = p.get("tags") or []
         tags = tags.split(",") if isinstance(tags, str) else tags
         img = (p.get("images") or [{}])[0].get("src")
-        out.append((title, price, f'{base}/products/{p["handle"]}', {
+        out.append((title, price, p.get("url") or f'{base}/products/{p["handle"]}', {
             "match": f'{title} {p.get("product_type", "")} {" ".join(tags)}',
             "sizes": variant_sizes(p),
             "category": categorize(p.get("product_type", ""), p["title"], tags),
@@ -423,13 +494,15 @@ MAX_PAGE_FETCHES = 10  # per store, per search; results are cached
 def search_site(site, query, category=None):
     name, base = site["name"], site["base_url"].rstrip("/")
     try:
-        products = None if site.get("type") == "html" else get_catalog(base)
+        products = (None if site.get("type") == "html" else
+                    get_square_catalog(base, site) if site.get("type") == "square" else get_catalog(base))
         if products:
             found, url = from_shopify(base, products), base
         elif not query:  # browsing a category needs a store catalog; search pages can't list everything
             return name, [], "no matching results"
         else:  # not a Shopify store (or catalog hidden): scrape its search page
-            url = (site.get("search_url") or base + "/search?q={q}").format(q=quote_plus(query))
+            url = (site.get("search_url") or base + "/search?q={q}").format(
+                q=quote_plus(query, encoding=site.get("search_encoding", "utf-8"), errors="ignore"))
             if not allowed(url):
                 return name, [], "no public catalog, and its search page is blocked by robots.txt"
             r = requests.get(url, headers=HEADERS, timeout=15)

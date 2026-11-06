@@ -19,6 +19,9 @@ def check(site, query):
     t0 = time.time()
     base = site["base_url"].rstrip("/")
     row = {"store": site["name"], "url": base, "ok": False}
+    if not query and site.get("type") == "html":  # search-page stores can't list a whole catalog
+        query = "jeans"
+        row["query"] = query
     try:
         name, offers, err = app.search_site(site, query, None)
     except Exception as e:                      # noqa: BLE001 - report, never crash the run
@@ -34,7 +37,8 @@ def check(site, query):
             row["error"] = f"{err}; cannot connect ({type(e).__name__})"
         return row
     row["ok"] = True
-    row["method"] = "shopify" if app.shop_meta(base) or any(o.get("_fill") is not None for o in offers) else "html"
+    row["method"] = site.get("type") or (
+        "shopify" if app.shop_meta(base) or any(o.get("_fill") is not None for o in offers) else "html")
     row["listings"] = len(offers)
     row["currency"] = offers[0]["currency"] + ("?" if offers[0].get("assumed") else "")
     row["ships_from"] = app.country_name(offers[0].get("ships_from")) or "unknown"
