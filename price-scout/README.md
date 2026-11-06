@@ -49,7 +49,7 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 ## 5. Use price alerts
 
 1. Run `python app.py` and search for a product. Set your size and fit filters if you want them applied.
-2. Enter a target price (or leave it blank to be alerted when it is in stock) and press "Set alert".
+2. Add one or more sizes under "My sizes" if you want them applied. Enter a target price (or leave it blank to be alerted when it is in stock) and press "Set alert".
 3. Alerts are checked now and then every hour while the app is running. Hits show under "Your price alerts"; press "Check now" to check immediately.
 4. Email alerts are removed for now. To change the check interval, set `ALERT_INTERVAL_MIN` (default 60 minutes) before running.
 
@@ -70,6 +70,8 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 4. Add a line to the change log below.
 
 ## Change log
+
+- **Several sizes at once.** "My sizes" now takes more than one size: type a size and press Enter (or comma, or pick from the list) and it becomes a tag; click a tag's × or press Backspace in the empty box to remove it. A product shows if any chosen size is in stock, its size buttons show only your sizes, and what you are still typing filters live. The chosen sizes are remembered in this browser, and a price alert saves all of them (any one in stock triggers it). The prototype matches.
 
 - **Search explainer.** `explain_search.py "query" -s "store"` shows why a store returns few or no results for a search (per-word counts and near misses). Added after Red Cast looked empty although its catalog loads (1,877 listings).
 

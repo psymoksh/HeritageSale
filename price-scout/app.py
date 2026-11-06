@@ -792,8 +792,14 @@ def size_match(label, want):
     return norm(want) in [norm(p) for p in [label] + re.split(r"\s*[/,]\s*|\s+x\s+", label.lower())]
 
 
+def want_sizes(want):
+    """'32' or '32,34' (several sizes, any of them) -> ['32', '34']."""
+    return [x.strip() for x in re.split(r"[,;]+", want or "") if x.strip()]
+
+
 def has_size(o, want):
-    return not want or any(ok and size_match(label, want) for label, ok in o["sizes"])
+    ws = want_sizes(want)
+    return not ws or any(ok and any(size_match(label, w) for w in ws) for label, ok in o["sizes"])
 
 
 FIT_KEYS = ("waist", "thigh", "front_rise", "back_rise", "knee", "leg_opening")
@@ -811,7 +817,8 @@ def fit_ranges(fit):
 def fit_ok(o, want, ranges):
     if not ranges:
         return has_size(o, want)
-    return any(m["in_stock"] and (not want or size_match(m["size"], want)) and
+    ws = want_sizes(want)
+    return any(m["in_stock"] and (not ws or any(size_match(m["size"], w) for w in ws)) and
                all(m.get(k) is not None and (lo is None or m[k] >= lo) and (hi is None or m[k] <= hi)
                    for k, lo, hi in ranges) for m in o["measures"])
 
@@ -886,7 +893,7 @@ def alerts_add():
         if c.execute("SELECT COUNT(*) FROM alerts WHERE owner=?", (me,)).fetchone()[0] >= MAX_ALERTS_PER_OWNER:
             return jsonify({"error": f"You can have up to {MAX_ALERTS_PER_OWNER} alerts. Delete one first."}), 400
         cur = c.execute("INSERT INTO alerts (query, size, max_total, created, fit, category, owner) VALUES (?,?,?,?,?,?,?)",
-                        (q, (d.get("size") or "").strip()[:20], mx,
+                        (q, (d.get("size") or "").strip()[:60], mx,
                          time.time(), json.dumps(fit), cat, me))
         row = dict(c.execute("SELECT * FROM alerts WHERE id=?", (cur.lastrowid,)).fetchone())
     threading.Thread(target=check_alert, args=(row,), daemon=True).start()
@@ -1006,6 +1013,14 @@ tr.item td:nth-child(5){grid-column:2;grid-row:3}tr.item td:nth-child(6){grid-co
 tr.item td:nth-child(7){grid-column:2/4;grid-row:4}
 tr.best{background:var(--dp-color-field-support);box-shadow:inset 10px 0 0 var(--dp-color-ink)}.best td:first-child{box-shadow:none}
 .cats{grid-template-columns:repeat(2,1fr)}.hero{grid-template-columns:1fr}.plane-text{border-right:0;border-bottom:var(--dp-border-rule) solid var(--dp-color-ink)}.plane-red{padding:36px var(--dp-spacing-gutter)}button.circle{width:176px}.fitgrid{grid-template-columns:1fr}.ctl{align-items:flex-start}}
+.sizebox{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;background:#fff;border:var(--dp-border-rule-compact) solid var(--dp-color-ink);padding:3px 6px;max-width:100%}
+.sizebox:focus-within{outline:4px solid var(--dp-color-field);outline-offset:2px}
+.sizebox input{border:0;width:130px;min-width:90px;padding:5px 4px;outline:none;background:transparent}
+.sizebox input:focus-visible{outline:none}
+button.stag{padding:1px 8px;min-height:30px;font-size:14px;border-width:2px;box-shadow:none;background:var(--dp-color-field);color:var(--dp-color-on-field);border-color:var(--dp-color-field)}
+button.stag:hover:not(:disabled){background:var(--dp-color-ink);color:var(--dp-color-on-field)}
+button.stag:active:not(:disabled){transform:none}
+#sizetags{display:contents}
 #ctl{position:sticky;top:0;z-index:30}
 .chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
 .chips .mut{margin-right:2px}
@@ -1054,7 +1069,7 @@ tr.item{scroll-margin-top:150px}
 <main>
 <div class="ctl" id="ctl" hidden>
 <label>Sort by <select id="sort"><option value="total">Price, low to high: est. total</option><option value="usd">Price, low to high: item price</option></select></label>
-<label>My size <input id="size" class="sm" list="sizes" placeholder="e.g. 32"></label><datalist id="sizes"></datalist>
+<label for="size">My sizes</label><span id="sizebox" class="sizebox"><span id="sizetags"></span><input id="size" list="sizes" placeholder="add size, Enter" autocomplete="off" aria-label="Add a size"></span><datalist id="sizes"></datalist>
 <label><input type="checkbox" id="stock"> In stock only</label>
 <label><input type="checkbox" id="sale"> On sale only</label></div>
 <details id="fit" hidden><summary id="fitsum">Fit measurements (inches)</summary>
@@ -1074,17 +1089,25 @@ const q=$('q'),go=$('go'),out=$('out'),sortSel=$('sort'),stockBox=$('stock'),sal
 let DATA=null,LASTQ='';const OPEN=new Set();
 let SEL=null,ALLROWS=false;const EXP=new Set(),LIM={};   // SEL = {i: offer index, size}: the one open measurements panel
 const ls={get:k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
-sizeIn.value=ls.get('ps_size');
+
 const money=(v,c)=>{try{return new Intl.NumberFormat('en-US',{style:'currency',currency:c}).format(v)}catch(e){return v.toFixed(2)+' '+c}};
 const usdOrBlank=v=>v==null?'n/a':money(v,'USD');
 const norm=s=>s.toLowerCase().replace(/\s+/g,'').replace(/^w(?=\d)/,'');
 const sizeMatch=(label,want)=>[label].concat(label.split(/\s*[\/,]\s*|\s+x\s+/i)).some(p=>norm(p)===norm(want));
-const hasSize=(o,w)=>!w||o.sizes.some(s=>s[1]&&sizeMatch(s[0],w));
+let SIZES=[];   // committed sizes (tags); whatever is still being typed counts too, so results filter as you type
+const parseSizes=t=>String(t||'').split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
+const wantList=()=>SIZES.concat(parseSizes(sizeIn.value).filter(x=>!SIZES.some(y=>norm(y)===norm(x))));
+const saveSizes=()=>{ls.set('ps_sizes',JSON.stringify(SIZES))};
+try{SIZES=JSON.parse(ls.get('ps_sizes')||'[]')}catch(e){SIZES=[]}
+if(!SIZES.length)SIZES=parseSizes(ls.get('ps_size'));
+function drawSizes(){$('sizetags').innerHTML=SIZES.map((s,i)=>`<button type="button" class="stag" data-rm="${i}" aria-label="Remove size ${esc(s)}">${esc(s)} ×</button>`).join('')}
+function commitSize(){parseSizes(sizeIn.value).forEach(x=>{if(!SIZES.some(y=>norm(y)===norm(x)))SIZES.push(x)});sizeIn.value='';saveSizes();drawSizes();render()}
+const hasSize=(o,w)=>!w.length||o.sizes.some(s=>s[1]&&w.some(x=>sizeMatch(s[0],x)));
 const FIT=[['waist','Waist'],['thigh','Thigh'],['front_rise','Front rise'],['back_rise','Back rise'],['knee','Knee'],['leg_opening','Leg opening']];
 const num=id=>{const v=parseFloat($(id).value);return isNaN(v)?null:v};
 const fitObj=()=>{const o={};FIT.forEach(([k])=>{const lo=num('min_'+k),hi=num('max_'+k);if(lo!=null||hi!=null)o[k]=[lo,hi]});return o};
 const fitRanges=()=>Object.entries(fitObj());
-const fitSizes=(o,w,rs)=>o.measures.filter(m=>m.in_stock&&(!w||sizeMatch(m.size,w))&&rs.every(([k,[lo,hi]])=>m[k]!=null&&(lo==null||m[k]>=lo)&&(hi==null||m[k]<=hi))).map(m=>m.size);
+const fitSizes=(o,w,rs)=>o.measures.filter(m=>m.in_stock&&(!w.length||w.some(x=>sizeMatch(m.size,x)))&&rs.every(([k,[lo,hi]])=>m[k]!=null&&(lo==null||m[k]>=lo)&&(hi==null||m[k]<=hi))).map(m=>m.size);
 const fitOk=(o,w,rs)=>rs.length?fitSizes(o,w,rs).length>0:hasSize(o,w);
 const fitText=f=>{try{return Object.entries(JSON.parse(f||'{}')).map(([k,[lo,hi]])=>' · '+k.replace('_',' ')+' '+(lo!=null&&hi!=null?lo+'–'+hi:lo!=null?'≥ '+lo:'≤ '+hi)+'″').join('')}catch(e){return ''}};
 const stripP=s=>String(s).replace(/\(.*?\)/g,'');
@@ -1094,7 +1117,7 @@ const fmt=v=>(+v).toFixed(2).replace(/\.?0+$/,'');
 const rngText=([lo,hi])=>lo!=null&&hi!=null?lo+'–'+hi:lo!=null?'≥ '+lo:'≤ '+hi;
 function chips(o,want,fits){
   const list=o.sizes,inS=list.filter(s=>s[1]);
-  let base=want?list.filter(s=>sameSize(s[0],want)):(fits&&fits.length?list.filter(s=>fits.some(f=>sameSize(f,s[0]))):inS.slice(0,8));
+  let base=want.length?list.filter(s=>want.some(x=>sameSize(s[0],x))):(fits&&fits.length?list.filter(s=>fits.some(f=>sameSize(f,s[0]))):inS.slice(0,8));
   if(!base.length)base=(inS.length?inS:list).slice(0,8);
   const vis=EXP.has(o._i)?list:base,hidden=list.length-base.length;
   const on=s=>SEL&&SEL.i===o._i&&sameSize(SEL.size,s);
@@ -1142,7 +1165,7 @@ function updateCats(base){
   });
 }
 function filtered(){
-  const want=sizeIn.value.trim(),ranges=fitActive()?fitRanges():[];
+  const want=wantList(),ranges=fitActive()?fitRanges():[];
   const base=DATA.offers.filter(o=>!(stockBox.checked&&o.sold_out)&&!(saleBox.checked&&!o.was)&&fitOk(o,want,ranges));
   return {want,ranges,base};
 }
@@ -1189,7 +1212,7 @@ function render(){
     ?`${nProd} ${esc(DATA.category)} ${nProd===1?'product':'products'}, cheapest first${DATA.truncated?` (the ${DATA.offers.length} cheapest of ${DATA.total_matches.toLocaleString()}; type a product name to search them all)`:''}`
     :`${nProd} ${nProd===1?'product':'products'}, cheapest first${DATA.truncated?` (the ${DATA.offers.length} cheapest of ${DATA.total_matches.toLocaleString()})`:''}`;
   out.innerHTML=`<div class="card">`+(offers.length
-    ?`<p class="mut">${shown}${want?' · size '+esc(want)+' in stock':''}${ranges.length?' · matching your fit measurements':''}${noData&&(want||ranges.length)?' · '+noData+' hidden: no '+(ranges.length?'measurement':'size')+' data':''}</p>
+    ?`<p class="mut">${shown}${want.length?' · size '+esc(want.join(' or '))+' in stock':''}${ranges.length?' · matching your fit measurements':''}${noData&&(want.length||ranges.length)?' · '+noData+' hidden: no '+(ranges.length?'measurement':'size')+' data':''}</p>
     <table><tr class="hd"><th></th><th>Product</th>${th('total','Est. total')}${th('usd','Item (USD)')}<th>Shipping</th><th>Duty</th><th>Ships from</th><th>Local price</th></tr>${body}</table>
     <p class="mut">Est. total = item + estimated shipping + import duty, assuming delivery to the US. Shipping and duty are flat estimates (edit them per store in sites.json); check each store at checkout. Sold-out items are listed last.</p>`
     :`<p>${DATA.browse?'No '+esc(DATA.category)+' listings match your filters.':'No matching results found.'}</p>`)
@@ -1209,7 +1232,7 @@ async function load(term,cat){
     DATA.offers.forEach((o,i)=>o._i=i);SEL=null;ALLROWS=false;EXP.clear();Object.keys(LIM).forEach(k=>delete LIM[k]);
     const set=new Set();DATA.offers.forEach(o=>o.sizes.forEach(s=>s[1]&&set.add(s[0])));
     $('sizes').innerHTML=[...set].sort((a,b)=>parseFloat(a)-parseFloat(b)||a.localeCompare(b)).slice(0,80).map(s=>`<option value="${esc(s)}">`).join('');
-    const c=DATA.offers.filter(o=>(CAT==='All'||o.category===CAT)&&!o.sold_out&&o.total!=null&&fitOk(o,sizeIn.value.trim(),fitActive()?fitRanges():[])).map(o=>o.total);
+    const c=DATA.offers.filter(o=>(CAT==='All'||o.category===CAT)&&!o.sold_out&&o.total!=null&&fitOk(o,wantList(),fitActive()?fitRanges():[])).map(o=>o.total);
     amax.value=c.length?Math.floor(Math.min(...c)*0.9):'';
     $('ctl').hidden=false;$('abar').hidden=!term;render();
   }catch(e){out.innerHTML='<div class="card"><p class="mut">Something went wrong: '+esc(e.message)+'</p></div>'}
@@ -1243,7 +1266,7 @@ async function loadAlerts(){
   }catch(e){}
 }
 $('mkalert').onclick=async()=>{
-  const body={query:LASTQ,category:CAT==='All'?'':CAT,size:sizeIn.value.trim(),fit:fitActive()?fitObj():{},max_total:amax.value};
+  const body={query:LASTQ,category:CAT==='All'?'':CAT,size:wantList().join(','),fit:fitActive()?fitObj():{},max_total:amax.value};
   const r=await fetch('/api/alerts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const j=r.ok?{}:await r.json().catch(()=>({}));
   $('amsg').textContent=r.ok?'Alert created. It is checked now, then every hour while this app is running.':(j.error||'Could not create that alert.');
@@ -1267,10 +1290,12 @@ out.onclick=e=>{
   const cg=e.target.closest('[data-catgo]');if(cg){pickCat(cg.dataset.catgo);window.scrollTo({top:out.offsetTop,behavior:'smooth'});return}
   const m=e.target.closest('[data-more]');if(m){const g=m.dataset.more;OPEN.has(g)?OPEN.delete(g):OPEN.add(g);render();const n=out.querySelector('[data-more="'+g+'"]');if(n)n.focus();return}const b=e.target.closest('[data-sort]');if(!b)return;sortSel.value=b.dataset.sort;render();const n=out.querySelector('[data-sort="'+b.dataset.sort+'"]');if(n)n.focus()};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&SEL){SEL=null;render()}});
-sizeIn.oninput=()=>{ls.set('ps_size',sizeIn.value);render()};
+sizeIn.oninput=render;sizeIn.onchange=commitSize;
+sizeIn.onkeydown=e=>{if(e.key==='Enter'||e.key===','){e.preventDefault();commitSize()}else if(e.key==='Backspace'&&!sizeIn.value&&SIZES.length){SIZES.pop();saveSizes();drawSizes();render()}};
+$('sizebox').onclick=e=>{const b=e.target.closest('[data-rm]');if(b){SIZES.splice(+b.dataset.rm,1);saveSizes();drawSizes();render();sizeIn.focus()}};
 document.querySelectorAll('.fit input').forEach(i=>i.oninput=render);
 q.addEventListener('keydown',e=>{if(e.key==='Enter')search()});
-buildCats();updateCats(null);
+buildCats();updateCats(null);drawSizes();
 loadAlerts();setInterval(loadAlerts,60000);
 </script></html>"""
 
