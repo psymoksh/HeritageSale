@@ -33,7 +33,7 @@ To look at one product page in detail (for example a store whose size table is n
 
 1. Run `python3 diagnose_fit.py` (all stores) or `python3 diagnose_fit.py -s "Tendrel"` (one store). It takes a minute or two.
 2. Each store gets a one-line verdict, for example "chart appears to be an image" or "measurement words present but parser missed it".
-3. Attach the saved `fit_diagnosis.txt` to the chat so the parser can be taught that store's chart layout.
+3. Attach the saved `fit_diagnosis.txt` to the chat so the parser can be taught that store's chart layout. For each "parser missed" product the file includes the page address and the raw HTML around the measurement words, so no separate page dump is needed.
 
 ## 4. Change a store's settings
 
@@ -66,6 +66,8 @@ To look at one product page in detail (for example a store whose size table is n
 4. Add a line to the change log below.
 
 ## Change log
+
+- **Fit diagnosis shows its evidence.** For every product where `diagnose_fit.py` finds measurement words but the parser reads nothing, `fit_diagnosis.txt` now says whether the words are in the catalog description or on the page, and includes the raw HTML around them (tags included) so the chart's layout is visible. The console also prints the first such product URL per store. Reason: two of the eight "parser missed" stores (BEARS TOKYO, Withered Fig) turned out to have no readable chart on the sampled page.
 
 - **Japanese size charts.** The parser now reads common Japanese labels (ウエスト waist, 股上 rise, ワタリ thigh, 膝 knee, 裾幅 leg opening), treats charts with Japanese text as centimetres when no unit is printed, and halves a waist given as a full circumference (over 26 in) to match the flat measurement the filters use. Added for Reggieshop; confirmed on a live product page (5 sizes read, values converted correctly). `diagnose_fit.py --dump URL` added to inspect a single product page.
 

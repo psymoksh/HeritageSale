@@ -28,12 +28,23 @@ def snippet(text, n=260):
     return re.sub(r"\s+", " ", text[max(0, m.start() - 60):m.start() + n]) if m else ""
 
 
+def raw_context(html, before=250, after=900):
+    """The raw HTML (tags included) around the first measurement word, so the chart's layout is visible."""
+    html = html or ""
+    ms = [m for m in (WORDS.search(html), JP_WORDS.search(html)) if m]
+    if not ms:
+        return ""
+    m = min(ms, key=lambda x: x.start())
+    return re.sub(r"\s+", " ", html[max(0, m.start() - before):m.start() + after])
+
+
 def inspect(html):
     soup = BeautifulSoup(html or "", "html.parser")
     txt = soup.get_text(" ")
     return {
         "chars": len(html or ""), "tables": len(soup.find_all("table")), "words": has_chart_words(txt),
         "parsed": app.parse_charts(html or ""), "snippet": snippet(txt),
+        "raw": raw_context(html) if has_chart_words(txt) else "",
         "images": [(i.get("alt") or i.get("src") or "")[:80] for i in soup.find_all("img")
                    if re.search(r"size|chart|measure|spec", (i.get("alt", "") + i.get("src", "")), re.I)][:3],
         "iframes": len(soup.find_all("iframe")),
@@ -65,11 +76,11 @@ def run(site, out):
         return "skipped (not Shopify)"
     jeans = [p for p in products if app.categorize(p.get("product_type", ""), p["title"], p.get("tags") or []) == "Bottoms"
              and any(v.get("available") for v in p.get("variants", []))][:4]
-    verdicts = []
+    verdicts, missed = [], []
     for p in jeans:
         url = f'{base}/products/{p["handle"]}'
         cat = inspect(p.get("body_html"))
-        page = {"parsed": {}, "words": False, "images": [], "iframes": 0, "snippet": "", "chars": 0, "tables": 0}
+        page = {"parsed": {}, "words": False, "images": [], "iframes": 0, "snippet": "", "raw": "", "chars": 0, "tables": 0}
         try:
             if app.allowed(url):
                 page = inspect(app.requests.get(url, headers=app.HEADERS, timeout=15).text)
@@ -79,11 +90,20 @@ def run(site, out):
             out.write(f"  page fetch failed: {e}\n")
         v = verdict(cat, page)
         verdicts.append(v)
+        where = "description" if cat["words"] else "page" if page["words"] else ""
+        if v.startswith("MEASUREMENT") and where:
+            src = cat if cat["words"] else page
+            missed.append((url, where, src["snippet"]))
         out.write(f"\n  {p['title']}\n  {url}\n  size options: {[o.get('name') for o in p.get('options', [])]}\n"
                   f"  description: {cat['chars']} chars, {cat['tables']} tables, parsed {len(cat['parsed'])} sizes, words={cat['words']}\n"
                   f"  page:        {page['chars']} chars, {page['tables']} tables, parsed {len(page['parsed'])} sizes, words={page['words']}, iframes={page['iframes']}\n"
                   f"  chart images: {cat['images'] or page['images'] or 'none'}\n"
-                  f"  evidence: {cat['snippet'] or page['snippet'] or '(none)'}\n  -> {v}\n")
+                  f"  evidence: {cat['snippet'] or page['snippet'] or '(none)'}\n")
+        if v.startswith("MEASUREMENT"):
+            out.write(f"  words found in the {where}; raw HTML around them:\n  {(cat['raw'] if cat['words'] else page['raw']) or '(none)'}\n")
+        out.write(f"  -> {v}\n")
+    if missed:
+        print(f"    {site['name']}: first missed product -> {missed[0][0]}\n      words in {missed[0][1]}: {missed[0][2][:200]}")
     return max(set(verdicts), key=verdicts.count) if verdicts else "no in-stock jeans found"
 
 
