@@ -50,6 +50,8 @@ The cloud sandbox cannot reach the stores, so do this on your own computer.
 
 ## Change log
 
+- **Store fixes (merged from live testing).** robots.txt now fetched properly; Self Edge, Celluloid and Brass Tacks read from their own page/catalog formats; Reggieshop added (25 stores); Japanese size option recognised. Re-run `python check_stores.py` to see current coverage.
+
 - **Removed email alerts.** No email field, no SMTP code or settings. Alerts are in-app only. Old alert databases still work; the unused email column is ignored. Reason: the public-launch security review found email would let anyone send mail to any address; bring it back with confirmation and unsubscribe.
 
 - **Initial commit.** Multi-store search with local currency and USD; estimated shipping and duty; size filter; sale awareness; product images; fit-measurement filters (waist, thigh, front rise, back rise, knee, leg opening); price alerts; garment categories; cheapest-first ordering; one row per product with "See N other stores"; "Ships from" country column; Bauhaus styling with a phone card layout; `check_stores.py` health check.
