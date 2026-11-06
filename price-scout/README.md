@@ -67,7 +67,7 @@ To look at one product page in detail (for example a store whose size table is n
 
 ## Change log
 
-- **Japanese size charts.** The parser now reads common Japanese labels (ウエスト waist, 股上 rise, ワタリ thigh, 膝 knee, 裾幅 leg opening), treats charts with Japanese text as centimetres when no unit is printed, and halves a waist given as a full circumference (over 26 in) to match the flat measurement the filters use. Added for Reggieshop; not yet confirmed against the live page. `diagnose_fit.py --dump URL` added to inspect a single product page.
+- **Japanese size charts.** The parser now reads common Japanese labels (ウエスト waist, 股上 rise, ワタリ thigh, 膝 knee, 裾幅 leg opening), treats charts with Japanese text as centimetres when no unit is printed, and halves a waist given as a full circumference (over 26 in) to match the flat measurement the filters use. Added for Reggieshop; confirmed on a live product page (5 sizes read, values converted correctly). `diagnose_fit.py --dump URL` added to inspect a single product page.
 
 - **Catalog cap raised to 8,000 products per store** (was 5,000, which cut off Blue Owl and Blue Seven). Set `CATALOG_CAP` to change it. A store with 8,000 products now takes up to 32 requests to load, once an hour, so the first search after a restart can be slower.
 - **Fit diagnosis tool made stricter.** It now needs two different measurement words (waist, thigh, rise, knee...) before it says a chart is present; the first version matched pieces of ordinary words like "enterprise" and over-reported. Re-run `python3 diagnose_fit.py` for trustworthy verdicts.
