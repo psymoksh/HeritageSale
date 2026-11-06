@@ -29,6 +29,8 @@ The cloud sandbox cannot reach the stores, so do this on your own computer.
 
 ### 3b. Find out why fit measurements are missing for a store
 
+To look at one product page in detail (for example a store whose size table is not being read): `python3 diagnose_fit.py --dump "https://store.com/products/some-jeans"`. It saves `page_dump.html` and prints whether the table is in the raw page, in Japanese, inside a script or in an iframe. Attach `page_dump.html` and the printed output to the chat.
+
 1. Run `python3 diagnose_fit.py` (all stores) or `python3 diagnose_fit.py -s "Tendrel"` (one store). It takes a minute or two.
 2. Each store gets a one-line verdict, for example "chart appears to be an image" or "measurement words present but parser missed it".
 3. Attach the saved `fit_diagnosis.txt` to the chat so the parser can be taught that store's chart layout.
@@ -64,6 +66,8 @@ The cloud sandbox cannot reach the stores, so do this on your own computer.
 4. Add a line to the change log below.
 
 ## Change log
+
+- **Japanese size charts.** The parser now reads common Japanese labels (ウエスト waist, 股上 rise, ワタリ thigh, 膝 knee, 裾幅 leg opening), treats charts with Japanese text as centimetres when no unit is printed, and halves a waist given as a full circumference (over 26 in) to match the flat measurement the filters use. Added for Reggieshop; not yet confirmed against the live page. `diagnose_fit.py --dump URL` added to inspect a single product page.
 
 - **Catalog cap raised to 8,000 products per store** (was 5,000, which cut off Blue Owl and Blue Seven). Set `CATALOG_CAP` to change it. A store with 8,000 products now takes up to 32 requests to load, once an hour, so the first search after a restart can be slower.
 - **Fit diagnosis tool made stricter.** It now needs two different measurement words (waist, thigh, rise, knee...) before it says a chart is present; the first version matched pieces of ordinary words like "enterprise" and over-reported. Re-run `python3 diagnose_fit.py` for trustworthy verdicts.

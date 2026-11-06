@@ -15,13 +15,16 @@ import app
 WORDS = re.compile(r"\b(waist|thigh|front rise|back rise|rise|inseam|leg opening|knee|hem)\b", re.I)
 
 
+JP_WORDS = re.compile("ウエスト|ウェスト|股上|股下|ワタリ|わたり|渡り|太もも|ひざ|膝|裾幅|裾周り|裾回り|ヒップ")
+
+
 def has_chart_words(text):
     """Real size charts name at least two different measurements; one stray word ('rise', 'hem') is not enough."""
-    return len({m.lower() for m in WORDS.findall(text)}) >= 2
+    return len({m.lower() for m in WORDS.findall(text)} | set(JP_WORDS.findall(text))) >= 2
 
 
 def snippet(text, n=260):
-    m = WORDS.search(text) if has_chart_words(text) else None
+    m = (WORDS.search(text) or JP_WORDS.search(text)) if has_chart_words(text) else None
     return re.sub(r"\s+", " ", text[max(0, m.start() - 60):m.start() + n]) if m else ""
 
 
@@ -84,10 +87,31 @@ def run(site, out):
     return max(set(verdicts), key=verdicts.count) if verdicts else "no in-stock jeans found"
 
 
+def dump(url):
+    """Look closely at ONE product page: is the size table in the raw HTML, in Japanese, in a script or an iframe?"""
+    html = app.requests.get(url, headers=app.HEADERS, timeout=20).text
+    open("page_dump.html", "w", encoding="utf-8").write(html)
+    soup = BeautifulSoup(html, "html.parser")
+    info = inspect(html)
+    scripts = [sc.get_text() for sc in soup.find_all("script") if re.search(r"size|chart|サイズ|ウエスト|股上", sc.get_text(), re.I)]
+    print(f"saved the page to page_dump.html ({len(html)} chars)")
+    print(f"tables in the raw HTML: {info['tables']}; iframes: {[i.get('src') for i in soup.find_all('iframe')][:5]}")
+    print(f"measurement words in visible text (English or Japanese): {info['words']}")
+    print(f"parser read {len(info['parsed'])} sizes: {dict(list(info['parsed'].items())[:3])}")
+    for i, tb in enumerate(soup.find_all("table")[:4]):
+        rows = [[c.get_text(' ', strip=True) for c in tr.find_all(['th', 'td'])] for tr in tb.find_all('tr')][:6]
+        print(f"table {i + 1} first rows: {rows}")
+    print(f"scripts that mention size/chart: {len(scripts)}" + (f"; first: {re.sub(r'\s+', ' ', scripts[0])[:300]}" if scripts else ""))
+    print("Attach page_dump.html (and this output) to the chat.")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-s", "--store")
+    ap.add_argument("--dump", metavar="URL", help="inspect one product page in detail")
     a = ap.parse_args()
+    if a.dump:
+        return dump(a.dump)
     sites = [s for s in app.load_sites() if not a.store or a.store.lower() in s["name"].lower()]
     with open("fit_diagnosis.txt", "w", encoding="utf-8") as out:
         for s in sites:

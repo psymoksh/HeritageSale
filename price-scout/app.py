@@ -285,7 +285,19 @@ def parse_num(text):
     return val
 
 
+# Japanese size-chart labels (checked first; longer terms before shorter ones that they contain).
+_JP_KEYS = (("back_rise", ("後股上", "後ろ股上", "バックライズ")),
+            ("front_rise", ("前股上", "フロントライズ", "股上", "ライズ")),
+            ("waist", ("ウエスト", "ウェスト", "胴回り", "胴周り")),
+            ("thigh", ("ワタリ", "わたり", "渡り", "太もも", "もも")),
+            ("knee", ("ひざ", "ヒザ", "膝")),
+            ("leg_opening", ("裾幅", "裾周り", "裾回り", "裾口", "すそ", "裾")))
+
+
 def measure_key(text):
+    for key, words in _JP_KEYS:
+        if any(w in text for w in words):
+            return key
     t = re.sub(r"[^a-z ]", " ", text.lower())
     if "rise" in t:
         return "back_rise" if "back" in t else "front_rise"
@@ -322,7 +334,8 @@ def parse_charts(html):
                 out.setdefault(m.group(1).strip(), {}).setdefault(k, v)
     for tb in soup.find_all("table"):
         text = tb.get_text(" ").lower()
-        div = 2.54 if re.search(r"\bcm\b", text) and not re.search(r"\binch|\bin\b|\"", text) else 1.0
+        metric = re.search(r"\bcm\b|センチ", text) or re.search(r"[ぁ-んァ-ヶ一-龥]", text)   # Japanese charts are in cm even when the unit is not printed
+        div = 2.54 if metric and not re.search(r"\binch|\bin\b|\"", text) else 1.0
         rows = [[c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"])] for tr in tb.find_all("tr")]
         rows = [r for r in rows if any(r)]
         if len(rows) < 2:
@@ -341,6 +354,9 @@ def parse_charts(html):
                     v = parse_num(cell)
                     if k and v and size.strip():
                         out.setdefault(size.strip(), {}).setdefault(k, round(v / div, 2))
+    for vals in out.values():        # the app compares flat (across-the-garment) waist, ~16-18 in; a chart giving the full circumference is halved
+        if vals.get("waist") and vals["waist"] > 26:
+            vals["waist"] = round(vals["waist"] / 2, 2)
     return out
 
 
