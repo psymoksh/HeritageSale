@@ -313,6 +313,43 @@ PAIR = re.compile(r"(waist|thigh|front\s*rise|back\s*rise|rise|knee|leg\s*openin
                   r"(\d+(?:\.\d+)?(?:\s+\d+/\d+|[½¼¾⅛⅜⅝⅞])?|[½¼¾⅛⅜⅝⅞])", re.I)
 
 
+def _slash_num(seg):
+    """'23,5cm' -> (23.5, 'cm'); '30inc' -> (30.0, 'in'); '12' -> (12.0, '')."""
+    m = re.match(r"\s*(\d+(?:[.,]\d+)?)\s*(cm|mm|inc(?:hes)?|in|\")?", seg, re.I)
+    if not m:
+        return None, ""
+    unit = (m.group(2) or "").lower()
+    return float(m.group(1).replace(",", ".")), ("cm" if unit == "cm" else "in" if unit else "")
+
+
+def _slash_charts(lines, out):
+    """BEARS TOKYO style: a header 'Size/waist/front rise/...' then one line per size '30inc/76cm/30cm/...'."""
+    for i, line in enumerate(lines):
+        head = [h.strip() for h in line.split("/")]
+        if len(head) < 4 or not head[0].lower().startswith("size"):
+            continue
+        keys = [measure_key(h) for h in head[1:]]
+        if sum(k is not None for k in keys) < 2:
+            continue
+        for row in lines[i + 1:i + 40]:
+            seg = [x.strip() for x in row.split("/")]
+            if len(seg) != len(head):
+                break
+            size, _ = _slash_num(seg[0])
+            if size is None:
+                break
+            cm_row = any("cm" in x.lower() for x in seg[1:])
+            label = str(int(size)) if size == int(size) else str(size)
+            for k, cell in zip(keys, seg[1:]):
+                v, unit = _slash_num(cell)
+                if k and v:
+                    inches = v / 2.54 if (unit == "cm" or (not unit and cm_row)) else v
+                    out.setdefault(label, {}).setdefault(k, round(inches, 2))
+
+
+BASE_SIZE = re.compile(r"measurements?\s+(?:are\s+)?based\s+on\s+(?:a\s+)?(?:size\s+)?(w?\d{2})", re.I)
+
+
 def parse_charts(html):
     """{size label: {measurement: inches}} read from size-chart tables in a product description."""
     if not html:
@@ -326,6 +363,21 @@ def parse_charts(html):
         div = 2.54 if re.search(r"\bcm\b", line, re.I) else 1.0
         vals = {}
         for name, num in PAIR.findall(m.group(2)):
+            k, v = measure_key(name), parse_num(num)
+            if k and v:
+                vals.setdefault(k, round(v / div, 2))
+        if len(vals) >= 2:
+            for k, v in vals.items():
+                out.setdefault(m.group(1).strip(), {}).setdefault(k, v)
+    lines = [l.strip() for l in soup.get_text("\n").splitlines() if l.strip()]
+    _slash_charts(lines, out)
+    for line in lines:      # one garment size only: 'Front rise: 11 1/4", Knee: 18", Leg opening: 16", Measurements based on size 32'
+        m = BASE_SIZE.search(line)
+        if not m:
+            continue
+        div = 2.54 if re.search(r"\bcm\b", line, re.I) else 1.0
+        vals = {}
+        for name, num in PAIR.findall(line):
             k, v = measure_key(name), parse_num(num)
             if k and v:
                 vals.setdefault(k, round(v / div, 2))
@@ -363,9 +415,14 @@ def parse_charts(html):
 def measure_rows(p, extra=None):
     """Chart rows that match a real variant: [{size, in_stock, waist, thigh, ...}]."""
     clean = lambda l: re.sub(r"^w(?=\d)", "", re.sub(r"\s+", "", l.lower()))
-    avail = {clean(l): a for l, a in variant_sizes(p)}
-    return [{"size": label, "in_stock": avail[clean(label)], **vals}
-            for label, vals in {**(extra or {}), **parse_charts(p.get("body_html"))}.items() if clean(label) in avail]
+    bare = lambda l: clean(re.sub(r"\(.*?\)", "", l))        # "36(S)" -> "36"
+    avail = {}
+    for l, a in variant_sizes(p):
+        avail.setdefault(clean(l), a)
+        avail.setdefault(bare(l), a)
+    return [{"size": label, "in_stock": avail[clean(label) if clean(label) in avail else bare(label)], **vals}
+            for label, vals in {**(extra or {}), **parse_charts(p.get("body_html"))}.items()
+            if clean(label) in avail or bare(label) in avail]
 
 
 # ---- Garment categories ----

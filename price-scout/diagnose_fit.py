@@ -19,8 +19,14 @@ JP_WORDS = re.compile("ウエスト|ウェスト|股上|股下|ワタリ|わた�
 
 
 def has_chart_words(text):
-    """Real size charts name at least two different measurements; one stray word ('rise', 'hem') is not enough."""
-    return len({m.lower() for m in WORDS.findall(text)} | set(JP_WORDS.findall(text))) >= 2
+    """Real size charts name at least two different measurements AND sit among numbers (6+ within 500 characters).
+    Prose like 'a high rise and room through the thigh' or a menu item 'Hem Orders' does not count."""
+    if len({m.lower() for m in WORDS.findall(text)} | set(JP_WORDS.findall(text))) < 2:
+        return False
+    for m in list(WORDS.finditer(text)) + list(JP_WORDS.finditer(text)):
+        if len(re.findall(r"\d+(?:[.,]\d+)?", text[max(0, m.start() - 250):m.start() + 250])) >= 6:
+            return True
+    return False
 
 
 def snippet(text, n=260):
