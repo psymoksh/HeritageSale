@@ -177,6 +177,9 @@ def matches(title, query):
 _catalog = {}  # base_url -> (fetched_at, products or None)
 
 
+CATALOG_CAP = int(os.environ.get("CATALOG_CAP", 8000))   # max products read per store (250 per request)
+
+
 def get_catalog(base):
     """Shopify stores publish their catalog at /products.json. Cached for an hour; None if the store has none."""
     hit = _catalog.get(base)
@@ -186,12 +189,12 @@ def get_catalog(base):
     try:
         if allowed(f"{base}/products.json"):
             products, page = [], 1
-            while page <= 20:  # up to 5,000 products
+            while len(products) < CATALOG_CAP:
                 r = requests.get(f"{base}/products.json", params={"limit": 250, "page": page},
                                  headers=HEADERS, timeout=20)
                 r.raise_for_status()
                 batch = r.json()["products"]
-                products += batch
+                products += batch[:CATALOG_CAP - len(products)]
                 if len(batch) < 250:
                     break
                 page += 1

@@ -12,11 +12,16 @@ import argparse, re, sys
 from bs4 import BeautifulSoup
 import app
 
-WORDS = re.compile(r"waist|thigh|front rise|back rise|rise|inseam|leg opening|knee|hem", re.I)
+WORDS = re.compile(r"\b(waist|thigh|front rise|back rise|rise|inseam|leg opening|knee|hem)\b", re.I)
+
+
+def has_chart_words(text):
+    """Real size charts name at least two different measurements; one stray word ('rise', 'hem') is not enough."""
+    return len({m.lower() for m in WORDS.findall(text)}) >= 2
 
 
 def snippet(text, n=260):
-    m = WORDS.search(text)
+    m = WORDS.search(text) if has_chart_words(text) else None
     return re.sub(r"\s+", " ", text[max(0, m.start() - 60):m.start() + n]) if m else ""
 
 
@@ -24,7 +29,7 @@ def inspect(html):
     soup = BeautifulSoup(html or "", "html.parser")
     txt = soup.get_text(" ")
     return {
-        "chars": len(html or ""), "tables": len(soup.find_all("table")), "words": bool(WORDS.search(txt)),
+        "chars": len(html or ""), "tables": len(soup.find_all("table")), "words": has_chart_words(txt),
         "parsed": app.parse_charts(html or ""), "snippet": snippet(txt),
         "images": [(i.get("alt") or i.get("src") or "")[:80] for i in soup.find_all("img")
                    if re.search(r"size|chart|measure|spec", (i.get("alt", "") + i.get("src", "")), re.I)][:3],
