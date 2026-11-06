@@ -1,12 +1,11 @@
 """Price Scout: type a product, and it searches your list of stores for the best prices.
 Run:  pip install -r requirements.txt && python app.py   ->  http://localhost:5000
 """
-import json, os, re, smtplib, sqlite3, threading, time, urllib.robotparser
+import json, os, re, sqlite3, threading, time, urllib.robotparser
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote_plus, urljoin, urlparse
 
 import requests
-from email.message import EmailMessage
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, render_template_string, request
 
@@ -608,26 +607,6 @@ def fit_ok(o, want, ranges):
                    for k, lo, hi in ranges) for m in o["measures"])
 
 
-def send_email(r, o):
-    host = os.environ.get("SMTP_HOST")
-    if not (host and r["email"]):
-        return
-    try:
-        m = EmailMessage()
-        m["Subject"] = f'Price alert: {r["query"]} at ${o["total"]:.2f}'
-        m["From"] = os.environ.get("ALERT_FROM") or os.environ.get("SMTP_USER", "")
-        m["To"] = r["email"]
-        m.set_content(f'{o["title"]} at {o["site"]}\nEstimated total ${o["total"]:.2f} '
-                      f'(item ${o["usd"]:.2f})\n{o["url"]}')
-        with smtplib.SMTP(host, int(os.environ.get("SMTP_PORT", 587)), timeout=20) as srv:
-            srv.starttls()
-            if os.environ.get("SMTP_USER"):
-                srv.login(os.environ["SMTP_USER"], os.environ.get("SMTP_PASS", ""))
-            srv.send_message(m)
-    except Exception as e:
-        print("alert email failed:", e)
-
-
 def check_alert(r):
     offers, _, _ = run_search(r["query"])
     ok = [o for o in offers if not o["sold_out"] and o["total"] is not None
@@ -637,7 +616,6 @@ def check_alert(r):
     notified, notified_at = r["notified_total"], r["notified_at"]
     if hit and (notified is None or best["total"] < notified - 0.01):  # new hit, or a further drop
         notified, notified_at = best["total"], time.time()
-        send_email(r, best)
     elif not hit:
         notified = None  # re-arm so a later hit notifies again
     with db() as c:
@@ -668,7 +646,7 @@ def alert_loop():
 def alerts_list():
     with db() as c:
         rows = [dict(x) for x in c.execute("SELECT * FROM alerts ORDER BY id DESC")]
-    return jsonify({"alerts": rows, "email_enabled": bool(os.environ.get("SMTP_HOST"))})
+    return jsonify({"alerts": rows})
 
 
 @app.post("/api/alerts")
@@ -691,8 +669,8 @@ def alerts_add():
         if any(v is not None for v in pair):
             fit[k] = pair
     with db() as c:
-        cur = c.execute("INSERT INTO alerts (query, size, max_total, email, created, fit, category) VALUES (?,?,?,?,?,?,?)",
-                        (q, (d.get("size") or "").strip()[:20], mx, (d.get("email") or "").strip()[:120],
+        cur = c.execute("INSERT INTO alerts (query, size, max_total, created, fit, category) VALUES (?,?,?,?,?,?)",
+                        (q, (d.get("size") or "").strip()[:20], mx,
                          time.time(), json.dumps(fit), cat))
         row = dict(c.execute("SELECT * FROM alerts WHERE id=?", (cur.lastrowid,)).fetchone())
     threading.Thread(target=check_alert, args=(row,), daemon=True).start()
@@ -826,7 +804,6 @@ tr.best{background:var(--dp-color-field-support);box-shadow:inset 10px 0 0 var(-
 <div id="out"></div>
 <div class="ctl" id="abar" hidden>
 <span>Alert me when est. total is at or below $</span><input id="amax" class="sm" type="number" min="0" step="1" placeholder="any">
-<input id="aemail" class="md" type="email" placeholder="email (optional)">
 <button id="mkalert" class="blue" type="button">Set alert</button><span class="mut" id="amsg">Uses your size and fit filters. Leave the price blank to be alerted when it's in stock.</span></div>
 <details id="alerts" hidden><summary>Your price alerts</summary><div class="card"><div id="alist"></div>
 <p class="mut">Checked every hour while this app is running. <button class="ghost" id="chk">Check now</button></p></div></details>
@@ -834,10 +811,10 @@ tr.best{background:var(--dp-color-field-support);box-shadow:inset 10px 0 0 var(-
 <script>
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const $=id=>document.getElementById(id);
-const q=$('q'),go=$('go'),out=$('out'),sortSel=$('sort'),stockBox=$('stock'),saleBox=$('sale'),sizeIn=$('size'),amax=$('amax'),aemail=$('aemail');
+const q=$('q'),go=$('go'),out=$('out'),sortSel=$('sort'),stockBox=$('stock'),saleBox=$('sale'),sizeIn=$('size'),amax=$('amax');
 let DATA=null,LASTQ='';const OPEN=new Set();
 const ls={get:k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
-sizeIn.value=ls.get('ps_size');aemail.value=ls.get('ps_email');
+sizeIn.value=ls.get('ps_size');
 const money=(v,c)=>{try{return new Intl.NumberFormat('en-US',{style:'currency',currency:c}).format(v)}catch(e){return v.toFixed(2)+' '+c}};
 const usdOrBlank=v=>v==null?'n/a':money(v,'USD');
 const norm=s=>s.toLowerCase().replace(/\s+/g,'').replace(/^w(?=\d)/,'');
@@ -955,14 +932,13 @@ async function loadAlerts(){
         ?`<b>Alert hit:</b> ${money(a.best_total,'USD')} at ${esc(a.best_site)} · <a href="${esc(a.best_url)}" target="_blank" rel="noopener">${esc(a.best_title)}</a>`
         :a.best_total!=null?`Watching. Best now ${money(a.best_total,'USD')} at ${esc(a.best_site)}`
         :a.checked?'Watching. Nothing in stock matches yet.':'Checking…';
-      return `<div class="arow"><div>${cond}<div class="mut">${st}${a.checked?' · checked '+esc(new Date(a.checked*1000).toLocaleString()):''}${a.email&&!d.email_enabled?' · email not set up, in-app only':''}</div></div>
+      return `<div class="arow"><div>${cond}<div class="mut">${st}${a.checked?' · checked '+esc(new Date(a.checked*1000).toLocaleString()):''}</div></div>
         <button class="ghost" data-del="${a.id}">Delete</button></div>`}).join('');
     document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{await fetch('/api/alerts/'+b.dataset.del,{method:'DELETE'});loadAlerts()});
   }catch(e){}
 }
 $('mkalert').onclick=async()=>{
-  const body={query:LASTQ,category:CAT==='All'?'':CAT,size:sizeIn.value.trim(),fit:fitActive()?fitObj():{},max_total:amax.value,email:aemail.value.trim()};
-  ls.set('ps_email',body.email);
+  const body={query:LASTQ,category:CAT==='All'?'':CAT,size:sizeIn.value.trim(),fit:fitActive()?fitObj():{},max_total:amax.value};
   const r=await fetch('/api/alerts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   $('amsg').textContent=r.ok?'Alert created. It is checked now, then every hour while this app is running.':'Could not create that alert.';
   setTimeout(loadAlerts,2500);

@@ -34,11 +34,12 @@ The cloud sandbox cannot reach the stores, so do this on your own computer.
 3. Save and restart the site (step 2 above).
 4. To add a store, add `{"name": "...", "base_url": "https://..."}` to the list.
 
-## 5. Turn on email alerts (optional)
+## 5. Use price alerts
 
-1. Set these before running the site: `SMTP_HOST`, `SMTP_PORT` (default 587), `SMTP_USER`, `SMTP_PASS`, `ALERT_FROM`.
-2. Optionally set `ALERT_INTERVAL_MIN` (default 60 minutes).
-3. Run `python app.py`, search for a product, and use "Set alert". Without SMTP settings, alerts still show inside the app.
+1. Run `python app.py` and search for a product. Set your size and fit filters if you want them applied.
+2. Enter a target price (or leave it blank to be alerted when it is in stock) and press "Set alert".
+3. Alerts are checked now and then every hour while the app is running. Hits show under "Your price alerts"; press "Check now" to check immediately.
+4. Email alerts are removed for now. To change the check interval, set `ALERT_INTERVAL_MIN` (default 60 minutes) before running.
 
 ## 6. Check your changes before committing
 
@@ -48,5 +49,7 @@ The cloud sandbox cannot reach the stores, so do this on your own computer.
 4. Add a line to the change log below.
 
 ## Change log
+
+- **Removed email alerts.** No email field, no SMTP code or settings. Alerts are in-app only. Old alert databases still work; the unused email column is ignored. Reason: the public-launch security review found email would let anyone send mail to any address; bring it back with confirmation and unsubscribe.
 
 - **Initial commit.** Multi-store search with local currency and USD; estimated shipping and duty; size filter; sale awareness; product images; fit-measurement filters (waist, thigh, front rise, back rise, knee, leg opening); price alerts; garment categories; cheapest-first ordering; one row per product with "See N other stores"; "Ships from" country column; Bauhaus styling with a phone card layout; `check_stores.py` health check.

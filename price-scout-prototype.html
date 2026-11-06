@@ -115,10 +115,9 @@ tr.best{background:var(--dp-color-field-support);box-shadow:inset 10px 0 0 var(-
 <div id="out"></div>
 <div class="ctl" id="abar" hidden>
 <span>Alert me when est. total is at or below $</span><input id="amax" class="sm" type="number" min="0" step="1" placeholder="any" aria-label="Alert price">
-<input id="aemail" class="md" type="email" placeholder="email (optional)" aria-label="Email">
 <button id="mkalert" class="blue" type="button">Set alert</button><span class="mut" id="amsg">Uses your size and fit filters. Leave the price blank to be alerted when it’s in stock.</span></div>
 <details id="alerts" hidden><summary>Your price alerts</summary><div class="card"><div id="alist"></div>
-<p class="mut">The real app checks alerts every hour and emails you.</p></div></details>
+<p class="mut">The real app checks alerts every hour while it is running and shows hits here.</p></div></details>
 </main>
 <script>
 const RATES={USD:1,JPY:150,EUR:0.92};
