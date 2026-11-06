@@ -168,10 +168,21 @@ def from_heuristic(soup, base):
     return out
 
 
+def _plain(text):
+    return re.sub(r"[\W_]+", " ", text.lower()).strip()
+
+
 def matches(title, query):
-    t = title.lower()
-    toks = [w for w in re.findall(r"\w+", query.lower()) if len(w) > 1]
-    return not toks or sum(w in t for w in toks) / len(toks) >= 0.6
+    """Exact phrase: what was typed must appear in the title, in that order, ignoring case, punctuation and spacing.
+    No fuzzy or partial-word matching ('ron' does not find 'Iron Heart'; 'momotaro0705' does find 'Momotaro 0705')."""
+    q = _plain(query)
+    if not q:
+        return True
+    t = _plain(title)
+    if f" {q} " in f" {t} ":
+        return True
+    sq = q.replace(" ", "")
+    return len(sq) >= 5 and sq in t.replace(" ", "")
 
 
 _catalog = {}  # base_url -> (fetched_at, products or None)
@@ -993,6 +1004,48 @@ tr.item td:nth-child(5){grid-column:2;grid-row:3}tr.item td:nth-child(6){grid-co
 tr.item td:nth-child(7){grid-column:2/4;grid-row:4}
 tr.best{background:var(--dp-color-field-support);box-shadow:inset 10px 0 0 var(--dp-color-ink)}.best td:first-child{box-shadow:none}
 .cats{grid-template-columns:repeat(2,1fr)}.hero{grid-template-columns:1fr}.plane-text{border-right:0;border-bottom:var(--dp-border-rule) solid var(--dp-color-ink)}.plane-red{padding:36px var(--dp-spacing-gutter)}button.circle{width:176px}.fitgrid{grid-template-columns:1fr}.ctl{align-items:flex-start}}
+#ctl{position:sticky;top:0;z-index:30}
+.chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.chips .mut{margin-right:2px}
+button.sz{padding:2px 9px;min-width:40px;min-height:32px;font-size:15px;font-weight:var(--dp-typography-weight-action);border-width:3px;box-shadow:none;background:#fff}
+button.sz:active:not(:disabled){transform:none;background:var(--dp-color-accent);color:var(--dp-color-on-field)}
+button.sz.out{color:#6b6b6b;border-color:#6b6b6b;text-decoration:line-through}
+button.sz.on{background:var(--dp-color-field);color:var(--dp-color-on-field);border-color:var(--dp-color-field);text-decoration:none}
+button.sz.more{border-style:dashed;font-size:14px}
+tr.panel td{padding:0;background:var(--dp-color-ground);border-bottom:var(--dp-border-rule) solid var(--dp-color-ink)}
+.pn{padding:16px var(--dp-spacing-gutter) 18px;box-shadow:inset 10px 0 0 var(--dp-color-field)}
+.pnh{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.pnh h3{margin:0;font-size:20px;font-weight:var(--dp-typography-weight-display)}
+button.x{padding:0 12px;font-size:24px;line-height:1.3;box-shadow:none;border-width:3px;flex:none}
+button.x:active:not(:disabled){transform:none}
+.mcells{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:12px 0}
+.mc{border:var(--dp-border-rule-compact) solid var(--dp-color-ink);background:#fff;padding:8px 10px}
+.mc .k{font-size:12px;font-weight:var(--dp-typography-weight-label);letter-spacing:.06em;text-transform:uppercase}
+.mc .v{font-size:26px;font-weight:var(--dp-typography-weight-display);line-height:1.1;letter-spacing:-.02em}
+.mc .v small{font-size:13px;font-weight:var(--dp-typography-weight-label)}
+.mc .st{font-size:13px;font-weight:var(--dp-typography-weight-label);min-height:1.3em}
+.mc.in{border-color:#0a7a2f}.mc.in .st{color:#0a7a2f}
+.mc.bad{border-color:var(--dp-color-accent)}.mc.bad .st{color:#c00000}
+table.ct{min-width:0;width:100%;background:#fff;font-size:14px}
+table.ct th{background:var(--dp-color-quiet);color:var(--dp-color-ink);text-transform:none;letter-spacing:0;text-align:right;padding:6px 8px;border:2px solid var(--dp-color-ink)}
+table.ct td{padding:6px 8px;text-align:right;border:2px solid var(--dp-color-ink)}
+table.ct th:first-child,table.ct td:first-child{text-align:left}
+table.ct tr.hl td{background:var(--dp-color-field-support);font-weight:var(--dp-typography-weight-display)}
+.nodata{border:3px dashed var(--dp-color-ink);background:#fff;padding:12px 14px;margin:12px 0}
+.others{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;font-size:var(--dp-typography-label)}
+button.oth{padding:4px 10px;font-size:14px;border-width:3px;box-shadow:none}
+button.oth[aria-pressed=true]{background:var(--dp-color-ink);color:var(--dp-color-on-field)}
+button.oth:active:not(:disabled){transform:none}
+.pn .ghost{margin-top:10px}
+@media (max-width:720px){body.sheet-open{padding-bottom:62vh}
+tr.panel{display:block}tr.panel>td{display:block;border:0}
+.pn{position:fixed;left:0;right:0;bottom:0;max-height:78vh;overflow:auto;z-index:50;background:var(--dp-color-ground);border-top:var(--dp-border-rule) solid var(--dp-color-ink);box-shadow:0 -10px 0 rgba(0,0,0,.18);padding:14px 16px calc(18px + env(safe-area-inset-bottom,0px))}
+table.ct{display:table}table.ct tbody{display:table-row-group}table.ct tr{display:table-row}table.ct td,table.ct th{display:table-cell}
+.pn{max-height:62vh}.pnh h3{font-size:18px}
+.mcells{grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0}.mc{padding:5px 7px}.mc .k{font-size:11px}.mc .v{font-size:19px}.mc .v small{font-size:11px}.mc .st{font-size:11px;min-height:0}
+.ctw{overflow-x:auto}table.ct{font-size:12px}table.ct th,table.ct td{padding:4px 5px}
+tr.item{scroll-margin-top:150px}
+#ctl{padding:8px 14px;gap:6px 14px}#ctl select,#ctl input:not([type=checkbox]){padding:6px 8px;font-size:15px}}
 </style>
 <header class="hero"><section class="plane-text"><span class="tri" aria-hidden="true"></span><h1>Price Scout</h1><div class="bar"><input id="q" type="search" placeholder="Search a product, e.g. Momotaro 0705" autofocus aria-label="Search a product"></div><p class="mut">Searches: {{ sites|join(', ') }}</p></section><aside class="plane-red"><button id="go" class="circle" type="button"><span>Search</span><span class="arrow" aria-hidden="true">→</span></button></aside></header>
 <nav class="cats" id="cats" aria-label="Garment categories"></nav>
@@ -1017,6 +1070,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 const $=id=>document.getElementById(id);
 const q=$('q'),go=$('go'),out=$('out'),sortSel=$('sort'),stockBox=$('stock'),saleBox=$('sale'),sizeIn=$('size'),amax=$('amax');
 let DATA=null,LASTQ='';const OPEN=new Set();
+let SEL=null,ALLROWS=false;const EXP=new Set(),LIM={};   // SEL = {i: offer index, size}: the one open measurements panel
 const ls={get:k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 sizeIn.value=ls.get('ps_size');
 const money=(v,c)=>{try{return new Intl.NumberFormat('en-US',{style:'currency',currency:c}).format(v)}catch(e){return v.toFixed(2)+' '+c}};
@@ -1031,6 +1085,44 @@ const fitRanges=()=>Object.entries(fitObj());
 const fitSizes=(o,w,rs)=>o.measures.filter(m=>m.in_stock&&(!w||sizeMatch(m.size,w))&&rs.every(([k,[lo,hi]])=>m[k]!=null&&(lo==null||m[k]>=lo)&&(hi==null||m[k]<=hi))).map(m=>m.size);
 const fitOk=(o,w,rs)=>rs.length?fitSizes(o,w,rs).length>0:hasSize(o,w);
 const fitText=f=>{try{return Object.entries(JSON.parse(f||'{}')).map(([k,[lo,hi]])=>' · '+k.replace('_',' ')+' '+(lo!=null&&hi!=null?lo+'–'+hi:lo!=null?'≥ '+lo:'≤ '+hi)+'″').join('')}catch(e){return ''}};
+const stripP=s=>String(s).replace(/\(.*?\)/g,'');
+const sameSize=(a,b)=>sizeMatch(a,b)||sizeMatch(b,a)||norm(stripP(a))===norm(stripP(b));
+const measureFor=(o,s)=>o.measures.find(m=>sameSize(m.size,s));
+const fmt=v=>(+v).toFixed(2).replace(/\.?0+$/,'');
+const rngText=([lo,hi])=>lo!=null&&hi!=null?lo+'–'+hi:lo!=null?'≥ '+lo:'≤ '+hi;
+function chips(o,want,fits){
+  const list=o.sizes,inS=list.filter(s=>s[1]);
+  let base=want?list.filter(s=>sameSize(s[0],want)):(fits&&fits.length?list.filter(s=>fits.some(f=>sameSize(f,s[0]))):inS.slice(0,8));
+  if(!base.length)base=(inS.length?inS:list).slice(0,8);
+  const vis=EXP.has(o._i)?list:base,hidden=list.length-base.length;
+  const on=s=>SEL&&SEL.i===o._i&&sameSize(SEL.size,s);
+  return '<div class="chips">'+(fits&&fits.length&&!EXP.has(o._i)?'<span class="mut">Fits:</span>':'')
+    +vis.map(s=>`<button type="button" class="sz${s[1]?'':' out'}${on(s[0])?' on':''}" data-sz="${esc(s[0])}" data-oi="${o._i}" aria-expanded="${!!on(s[0])}" title="${s[1]?'In stock':'Sold out'}. Show measurements">${esc(s[0])}</button>`).join('')
+    +(hidden>0?`<button type="button" class="sz more" data-exp="${o._i}">${EXP.has(o._i)?'fewer':'+'+hidden+' sizes'}</button>`:'')+'</div>';
+}
+function panel(l){
+  const o=l.find(x=>x._i===SEL.i),size=SEL.size,fo=fitActive()?fitObj():{};
+  const sz=o.sizes.find(s=>sameSize(s[0],size)),m=measureFor(o,size);
+  const stock=sz?(sz[1]?'In stock':'Sold out'):'Not listed at this store';
+  const link=`<a href="${esc(o.url)}" target="_blank" rel="noopener">Open the store’s page ↗</a>`;
+  let inner;
+  if(!o.measures.length){
+    inner=`<div class="nodata"><b>No measurements we can read for this store.</b><div class="mut">Its size chart may be an image or a pop-up on the product page, so fit filters can’t be checked here. ${link}</div></div>`;
+  }else{
+    const cells=m?FIT.filter(([k])=>m[k]!=null).map(([k,lab])=>{
+      const r=fo[k];let c='',st='';
+      if(r){const [lo,hi]=r,ok=(lo==null||m[k]>=lo)&&(hi==null||m[k]<=hi);c=ok?' in':' bad';st=ok?'✓ within your '+rngText(r):((lo!=null&&m[k]<lo?'↓ below':'↑ above')+' your '+rngText(r))}
+      return `<div class="mc${c}"><div class="k">${lab}</div><div class="v">${fmt(m[k])}<small> in</small></div><div class="st">${st}</div></div>`}).join('')
+      :`<p class="mut">This store’s chart has no row for size ${esc(size)}.</p>`;
+    const rows=o.measures,keys=FIT.filter(([k])=>rows.some(r=>r[k]!=null)),idx=m?rows.indexOf(m):-1;
+    const win=(ALLROWS||rows.length<=3||idx<0)?rows:rows.slice(Math.min(Math.max(0,idx-1),rows.length-3),Math.min(Math.max(0,idx-1),rows.length-3)+3);
+    inner=`<div class="mcells">${cells}</div><div class="ctw"><table class="ct"><thead><tr><th>Size</th>${keys.map(([,lab])=>`<th>${lab}</th>`).join('')}</tr></thead><tbody>`
+      +win.map(r=>`<tr class="${r===m?'hl':''}"><td>${esc(r.size)}${r.in_stock?'':' (sold out)'}</td>${keys.map(([k])=>`<td>${r[k]!=null?fmt(r[k]):''}</td>`).join('')}</tr>`).join('')+'</tbody></table></div>'
+      +(rows.length>3&&idx>=0?`<button type="button" class="ghost" data-allrows>${ALLROWS?'Show fewer sizes':'Show all '+rows.length+' sizes'}</button>`:'');
+  }
+  const oth=l.length>1?`<div class="others"><span>Same size at:</span>${l.map(x=>{const s2=x.sizes.find(s=>sameSize(s[0],size));return `<button type="button" class="oth" data-oth="${x._i}" aria-pressed="${x._i===o._i}">${esc(x.site)}${s2?(s2[1]?'':' (sold out)'):' (no '+esc(size)+')'}</button>`}).join('')}</div>`:'';
+  return `<tr class="panel"><td colspan="8"><div class="pn" role="region" aria-label="Measurements for size ${esc(size)}"><div class="pnh"><div><h3>Size ${esc(size)} · ${esc(o.site)}</h3><div class="mut">${stock} · flat garment measurements in inches (cm converted)</div></div><button type="button" class="x" data-close aria-label="Close measurements">×</button></div>${inner}${oth}<p class="mut">From the store’s own size chart. Check the product page before buying. ${link}</p></div></td></tr>`;
+}
 const CATS=['Bottoms','Tops','Outerwear','Footwear','Bags','Accessories','Other'];
 let CAT='All';
 const fitActive=()=>CAT==='All'||CAT==='Bottoms';
@@ -1054,6 +1146,7 @@ function filtered(){
 }
 function render(){
   if(!DATA)return;
+  document.body.classList.toggle('sheet-open',!!SEL);
   const key=sortSel.value,{want,ranges,base}=filtered();
   const inCat=o=>CAT==='All'||o.category===CAT;
   $('fit').hidden=!fitActive();
@@ -1065,23 +1158,28 @@ function render(){
     const item=o.usd==null?'n/a':(o.currency==='USD'?'':'≈ ')+money(o.usd,'USD');
     const local=money(o.price,o.currency)+(o.currency==='USD'?'':' '+o.currency)+(o.assumed?'*':'');
     const was=o.was?`<div class="mut"><s>${esc(money(o.was,o.currency))}</s> <span class="sale">−${Math.round((1-o.price/o.was)*100)}%</span></div>`:'';
-    const inStock=o.sizes.filter(s=>s[1]).map(s=>s[0]).join(' · '),fits=ranges.length?fitSizes(o,want,ranges):null;
+    const fits=ranges.length?fitSizes(o,want,ranges):null;
     const img=o.image?`<img class="thumb" src="${esc(o.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.opacity=.2">`:'<div class="thumb"></div>';
     return `<tr class="item ${first?'best':''}${sub?' sub':''}"><td>${img}</td>
-      <td><a href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.title)}</a>${first?`<span class="tag">${lowTag}</span>`:''}<div class="mut">${esc(o.site)}${fits?(fits.length?' · Fits: '+esc(fits.join(' · ')):''):(inStock?' · Sizes: '+esc(inStock):'')}</div></td>
+      <td><a href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.title)}</a>${first?`<span class="tag">${lowTag}</span>`:''}<div class="mut">${esc(o.site)}</div>${chips(o,want,fits)}</td>
       <td class="tot" data-l="Est. total">${usdOrBlank(o.total)}</td><td data-l="Item (USD)">${esc(item)}${was}</td><td data-l="Shipping">${usdOrBlank(o.ship)}</td><td data-l="Duty">${usdOrBlank(o.duty)}</td><td data-l="Ships from">${esc(o.ships_from_name||o.ships_from||'Unknown')}</td><td data-l="Local price">${esc(local)}</td></tr>`};
   const byGid=new Map();
   offers.forEach((o,i)=>{const g=o.gid||('x'+i);if(!byGid.has(g))byGid.set(g,[]);byGid.get(g).push(o)});   // offers are already sorted, so l[0] is the cheapest in-stock store for the current filters
   const prods=[...byGid.entries()],nProd=prods.length;
   const groups=(CAT==='All'?CATS:[CAT]).map(c=>[c,prods.filter(([,l])=>l[0].category===c)]).filter(g=>g[1].length);
-  const body=groups.map(([c,list])=>`<tr class="band"><td colspan="8">${esc(c)}<span class="n">${list.length} ${list.length===1?'product':'products'} · cheapest first</span></td></tr>`
-    +list.map(([gid,l],i)=>{
-      const head=row(l[0],i===0&&!l[0].sold_out),n=l.length-1;
-      if(!n)return head;
+  const lim=c=>CAT==='All'?5:(LIM[c]||20);   // under All each band shows its 5 cheapest products; in one category, 20 at a time
+  const body=groups.map(([c,list])=>{
+    const shown=list.slice(0,lim(c)),left=list.length-shown.length;
+    return `<tr class="band"><td colspan="8">${esc(c)}<span class="n">${list.length} ${list.length===1?'product':'products'} · cheapest first</span></td></tr>`
+    +shown.map(([gid,l],i)=>{
+      const head=row(l[0],i===0&&!l[0].sold_out),n=l.length-1,pn=SEL&&l.some(o=>o._i===SEL.i)?panel(l):'';
+      if(!n)return head+pn;
       const open=OPEN.has(gid);
-      return head+`<tr class="more"><td colspan="8"><button type="button" class="ghost" data-more="${esc(gid)}" aria-expanded="${open}">${open?'Hide':'See'} ${n} other ${n===1?'store':'stores'}</button></td></tr>`
+      return head+pn+`<tr class="more"><td colspan="8"><button type="button" class="ghost" data-more="${esc(gid)}" aria-expanded="${open}">${open?'Hide':'See'} ${n} other ${n===1?'store':'stores'}</button></td></tr>`
         +(open?l.slice(1).map(o=>row(o,false,true)).join(''):'');
-    }).join('')).join('');
+    }).join('')
+    +(left>0?`<tr class="more"><td colspan="8">${CAT==='All'?`<button type="button" class="ghost" data-catgo="${esc(c)}">See all ${list.length} ${esc(c)} →</button>`:`<button type="button" class="ghost" data-lim="${esc(c)}">Show ${Math.min(20,left)} more (${left} left)</button>`}</td></tr>`:'');
+  }).join('');
   const th=(k,label)=>`<th aria-sort="${key===k?'ascending':'none'}"><button type="button" class="sortbtn" data-sort="${k}" title="Sort cheapest first by ${esc(label)}">${label}${key===k?' ▲':''}</button></th>`;
   const assumed=DATA.offers.some(o=>o.assumed),scope=DATA.offers.filter(inCat);
   const noData=scope.filter(o=>ranges.length?!o.measures.length:!o.sizes.length).length;
@@ -1106,6 +1204,7 @@ async function load(term,cat){
     const r=await fetch('/api/search?q='+encodeURIComponent(term)+(cat?'&category='+encodeURIComponent(cat):''));
     if(!r.ok)throw new Error(r.status===429?'too many searches, please wait a minute and try again':'HTTP '+r.status);
     DATA=await r.json();LASTQ=term;
+    DATA.offers.forEach((o,i)=>o._i=i);SEL=null;ALLROWS=false;EXP.clear();Object.keys(LIM).forEach(k=>delete LIM[k]);
     const set=new Set();DATA.offers.forEach(o=>o.sizes.forEach(s=>s[1]&&set.add(s[0])));
     $('sizes').innerHTML=[...set].sort((a,b)=>parseFloat(a)-parseFloat(b)||a.localeCompare(b)).slice(0,80).map(s=>`<option value="${esc(s)}">`).join('');
     const c=DATA.offers.filter(o=>(CAT==='All'||o.category===CAT)&&!o.sold_out&&o.total!=null&&fitOk(o,sizeIn.value.trim(),fitActive()?fitRanges():[])).map(o=>o.total);
@@ -1151,7 +1250,21 @@ $('mkalert').onclick=async()=>{
 $('chk').onclick=async()=>{$('chk').disabled=true;await fetch('/api/alerts/check',{method:'POST'});$('chk').disabled=false;loadAlerts()};
 go.onclick=search;sortSel.onchange=stockBox.onchange=saleBox.onchange=render;
 $('cats').onclick=e=>{const b=e.target.closest('[data-cat]');if(b)pickCat(b.dataset.cat)};
-out.onclick=e=>{const m=e.target.closest('[data-more]');if(m){const g=m.dataset.more;OPEN.has(g)?OPEN.delete(g):OPEN.add(g);render();const n=out.querySelector('[data-more="'+g+'"]');if(n)n.focus();return}const b=e.target.closest('[data-sort]');if(!b)return;sortSel.value=b.dataset.sort;render();const n=out.querySelector('[data-sort="'+b.dataset.sort+'"]');if(n)n.focus()};
+out.onclick=e=>{
+  const z=e.target.closest('[data-sz]');
+  if(z){const oi=+z.dataset.oi,size=z.dataset.sz;SEL=(SEL&&SEL.i===oi&&sameSize(SEL.size,size))?null:{i:oi,size};ALLROWS=false;render();
+    const n=[...out.querySelectorAll('[data-sz]')].find(b=>+b.dataset.oi===oi&&b.dataset.sz===size);if(n)n.focus({preventScroll:true});
+    if(SEL){if(matchMedia('(min-width:721px)').matches){const p=out.querySelector('tr.panel');if(p)p.scrollIntoView({block:'nearest'})}
+      else if(n){const r=n.closest('tr.item');if(r)r.scrollIntoView({block:'start'})}}   // phone: bring the product above the bottom sheet
+    return}
+  const x=e.target.closest('[data-exp]');if(x){const i=+x.dataset.exp;EXP.has(i)?EXP.delete(i):EXP.add(i);render();const n=out.querySelector('[data-exp="'+i+'"]');if(n)n.focus();return}
+  const ot=e.target.closest('[data-oth]');if(ot){SEL={i:+ot.dataset.oth,size:SEL.size};render();const n=out.querySelector('[data-oth="'+ot.dataset.oth+'"]');if(n)n.focus();return}
+  if(e.target.closest('[data-close]')){const i=SEL&&SEL.i;SEL=null;render();const n=out.querySelector('[data-oi="'+i+'"]');if(n)n.focus();return}
+  if(e.target.closest('[data-allrows]')){ALLROWS=!ALLROWS;render();const n=out.querySelector('[data-allrows]');if(n)n.focus({preventScroll:true});return}
+  const lm=e.target.closest('[data-lim]');if(lm){const c=lm.dataset.lim;LIM[c]=(LIM[c]||20)+20;render();return}
+  const cg=e.target.closest('[data-catgo]');if(cg){pickCat(cg.dataset.catgo);window.scrollTo({top:out.offsetTop,behavior:'smooth'});return}
+  const m=e.target.closest('[data-more]');if(m){const g=m.dataset.more;OPEN.has(g)?OPEN.delete(g):OPEN.add(g);render();const n=out.querySelector('[data-more="'+g+'"]');if(n)n.focus();return}const b=e.target.closest('[data-sort]');if(!b)return;sortSel.value=b.dataset.sort;render();const n=out.querySelector('[data-sort="'+b.dataset.sort+'"]');if(n)n.focus()};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&SEL){SEL=null;render()}});
 sizeIn.oninput=()=>{ls.set('ps_size',sizeIn.value);render()};
 document.querySelectorAll('.fit input').forEach(i=>i.oninput=render);
 q.addEventListener('keydown',e=>{if(e.key==='Enter')search()});

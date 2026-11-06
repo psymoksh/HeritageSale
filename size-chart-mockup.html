@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Size chart panel mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@300..800&display=swap" rel="stylesheet">
+<style>
+:root{--ground:#f5f4ee;--ink:#000;--accent:#f00;--field:#00f;--yellow:#ff0;--quiet:#e8e8e8;--ok:#0a7a2f;--face:"Host Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--face);font-size:16px;line-height:1.45}
+.wrap{max-width:1040px;margin:0 auto;padding:22px 16px 60px}
+h1{font-size:15px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin:0 0 6px}
+.note{font-size:14px;margin:0 0 18px;background:var(--yellow);border:3px solid var(--ink);padding:8px 12px}
+.filters{display:flex;gap:12px;flex-wrap:wrap;font-size:14px;font-weight:650;margin-bottom:14px}
+.filters span{border:3px solid var(--ink);padding:4px 10px;background:#fff}
+.item{border:4px solid var(--ink);background:#fff;margin-bottom:16px}
+.row{display:grid;grid-template-columns:1fr auto;gap:8px 18px;padding:14px 16px;align-items:start}
+.name{font-weight:800;font-size:18px}
+.meta{font-size:14px;color:#333}
+.price{text-align:right}
+.price b{font-size:22px;font-weight:800}
+.price small{display:block;font-size:13px;color:#333}
+.sizes{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sizes .lbl{font-size:13px;font-weight:650;text-transform:uppercase;letter-spacing:.06em;margin-right:4px}
+.sz{font:inherit;font-weight:750;min-width:46px;padding:6px 10px;border:3px solid var(--ink);background:#fff;cursor:pointer;border-radius:0}
+.sz:hover{background:var(--quiet)}
+.sz.out{color:#777;border-color:#777;text-decoration:line-through}
+.sz.on{background:var(--field);color:#fff;border-color:var(--field);text-decoration:none}
+.sz:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.panel{border-top:4px solid var(--ink);background:var(--ground);padding:16px}
+.panel h2{margin:0 0 2px;font-size:16px;font-weight:800}
+.panel .sub{font-size:14px;margin:0 0 12px;color:#333}
+.big{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px}
+.cell{border:3px solid var(--ink);background:#fff;padding:8px 10px}
+.cell .k{font-size:12px;font-weight:650;text-transform:uppercase;letter-spacing:.06em}
+.cell .v{font-size:26px;font-weight:800;line-height:1.1}
+.cell .v small{font-size:13px;font-weight:650}
+.cell .st{font-size:12px;font-weight:650;margin-top:2px}
+.cell.in{border-color:var(--ok)} .cell.in .st{color:var(--ok)}
+.cell.low,.cell.high{border-color:var(--accent)} .cell.low .st,.cell.high .st{color:var(--accent)}
+table{border-collapse:collapse;width:100%;background:#fff;font-size:14px}
+th,td{border:2px solid var(--ink);padding:6px 8px;text-align:right}
+th:first-child,td:first-child{text-align:left}
+th{background:var(--quiet);font-weight:750}
+tr.hl td{background:var(--yellow);font-weight:800}
+tr.dim td{color:#777}
+.cap{font-size:13px;margin:8px 0 0}
+.cap a,.link{color:var(--field);font-weight:700}
+.nodata{border:3px dashed var(--ink);padding:14px;background:#fff}
+.nodata b{display:block;margin-bottom:4px}
+.others{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;font-size:14px}
+.others button{font:inherit;font-weight:650;border:3px solid var(--ink);background:#fff;padding:5px 10px;cursor:pointer;border-radius:0}
+.others button.on{background:var(--ink);color:#fff}
+@media(max-width:720px){
+  .row{grid-template-columns:1fr}.price{text-align:left}
+  .big{grid-template-columns:1fr 1fr}
+  .cell .v{font-size:22px}
+  th,td{padding:5px 5px;font-size:13px}
+}
+</style></head><body><div class="wrap">
+<h1>Mockup: size chart panel</h1>
+<p class="note">Made-up data. Click a size button to open its measurements under the product. Click "Other stores" buttons to compare the same size elsewhere.</p>
+<div class="filters"><span>Size 32</span><span>Waist 15–16.5 in</span><span>Thigh 12–13 in</span><span>Bottoms</span></div>
+<div id="list"></div>
+</div>
+<script>
+const FILT={waist:[15,16.5],thigh:[12,13],front_rise:[11,12.5],knee:[8.5,9.5],leg_opening:[7.5,8.5]};
+const LABELS={waist:"Waist (flat)",thigh:"Thigh",front_rise:"Front rise",knee:"Knee",leg_opening:"Leg opening"};
+const KEYS=Object.keys(LABELS);
+const PRODUCTS=[
+ {name:"Momotaro 0405 Selvedge Tapered",sub:"Cheapest store with size 32 in stock",selected:null,store:0,
+  stores:[
+   {name:"Okayama Denim",from:"Japan",total:"$236",item:"¥24,200 · $159.60",in_stock:{"30":true,"32":true,"34":false,"36":true},
+    chart:{"30":[14.96,12.6,11.4,8.9,7.9],"32":[15.95,12.99,11.8,9.1,8.1],"34":[16.93,13.39,12.2,9.3,8.3],"36":[17.91,13.78,12.6,9.5,8.5]}},
+   {name:"Blue Owl Workshop",from:"USA",total:"$248",item:"$225.00",in_stock:{"30":false,"32":true,"34":true,"36":false},
+    chart:{"30":[15.0,12.5,11.5,9.0,8.0],"32":[16.0,13.0,12.0,9.25,8.25],"34":[17.0,13.5,12.25,9.5,8.5],"36":[18.0,14.0,12.5,9.75,8.75]}},
+   {name:"Denimio",from:"Japan",total:"$259",item:"$179.00",in_stock:{"30":true,"32":false,"34":true,"36":true},chart:null,
+    url:"denimio.com/products/momotaro-0405"}
+  ]},
+ {name:"Tate + Yoko Easy Guy 15oz Selvedge",sub:"One store",selected:null,store:0,
+  stores:[
+   {name:"Tate + Yoko",from:"Canada",total:"$214",item:"$168.00",in_stock:{"30":true,"32":true,"34":true,"36":false},chart:null,
+    url:"tateandyoko.com/products/easy-guy-prototype-selvedge",popup:true}
+  ]}
+];
+const $=s=>document.querySelector(s);
+function status(k,v){const [lo,hi]=FILT[k];return v<lo?"low":v>hi?"high":"in"}
+function stText(k,v){const [lo,hi]=FILT[k];return v<lo?`below your ${lo}–${hi}`:v>hi?`above your ${lo}–${hi}`:`within your ${lo}–${hi}`}
+function render(){
+  $("#list").innerHTML=PRODUCTS.map((p,pi)=>{
+    const st=p.stores[p.store], sizes=Object.keys(st.in_stock);
+    const sizeBtns=sizes.map(s=>`<button class="sz ${st.in_stock[s]?"":"out"} ${p.selected===s?"on":""}" data-p="${pi}" data-s="${s}" aria-expanded="${p.selected===s}" title="${st.in_stock[s]?"In stock":"Sold out"}">${s}</button>`).join("");
+    return `<div class="item"><div class="row">
+      <div><div class="name">${p.name}</div><div class="meta">${st.name} · ships from ${st.from}${p.stores.length>1?` · <span class="link">See ${p.stores.length-1} other stores</span>`:""}</div></div>
+      <div class="price"><b>${st.total}</b><small>est. total · item ${st.item}</small></div>
+      <div class="sizes"><span class="lbl">Size</span>${sizeBtns}</div></div>
+      ${p.selected?panel(p,pi):""}</div>`}).join("");
+}
+function panel(p,pi){
+  const st=p.stores[p.store], s=p.selected;
+  const others=p.stores.length>1?`<div class="others"><span>Same size at:</span>${p.stores.map((x,i)=>`<button class="${i===p.store?"on":""}" data-p="${pi}" data-store="${i}">${x.name}${x.in_stock[s]?"":" (sold out)"}</button>`).join("")}</div>`:"";
+  if(!st.chart){
+    return `<div class="panel"><h2>Size ${s} · ${st.name}</h2><p class="sub">${st.in_stock[s]?"In stock":"Sold out"}</p>
+      <div class="nodata"><b>${st.popup?"This store shows its size chart in a pop-up we can't read yet.":"This store doesn't publish measurements we can read."}</b>
+      Fit filters can't be checked for this store. <a class="link" href="#" onclick="return false">Open the product page's size chart ↗</a><br><small>${st.url}</small></div>${others}</div>`;
+  }
+  const row=st.chart[s];
+  const cells=KEYS.map((k,i)=>{const v=row[i],c=status(k,v);return `<div class="cell ${c}"><div class="k">${LABELS[k]}</div><div class="v">${v.toFixed(2).replace(/0$/,"")}<small> in</small></div><div class="st">${c==="in"?"✓":c==="low"?"↓":"↑"} ${stText(k,v)}</div></div>`}).join("");
+  const rows=Object.keys(st.chart).map(sz=>`<tr class="${sz===s?"hl":""}"><td>${sz}${st.in_stock[sz]?"":" (sold out)"}</td>${st.chart[sz].map(v=>`<td>${v.toFixed(2).replace(/0$/,"")}</td>`).join("")}</tr>`).join("");
+  return `<div class="panel"><h2>Size ${s} · ${st.name}</h2><p class="sub">${st.in_stock[s]?"In stock":"Sold out"} · measurements are flat garment widths in inches (cm converted)</p>
+    <div class="big">${cells}</div>
+    <table><thead><tr><th>Size</th>${KEYS.map(k=>`<th>${LABELS[k]}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
+    <p class="cap">Measurements come from the store's own size chart. Check the product page before buying.</p>${others}</div>`;
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("button");if(!b)return;
+  const p=PRODUCTS[+b.dataset.p];
+  if(b.dataset.s){p.selected=p.selected===b.dataset.s?null:b.dataset.s}
+  else if(b.dataset.store){p.store=+b.dataset.store}
+  render();
+});
+PRODUCTS[0].selected="32";render();
+</script></body></html>

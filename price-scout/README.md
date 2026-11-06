@@ -14,7 +14,7 @@ Design and behavior notes live in `CLAUDE.md`. This file is the step-by-step gui
 
 1. In the terminal, run `python app.py`.
 2. Open http://127.0.0.1:5000 in your browser.
-3. Type a product (for example "momotaro") and press Search, or pick a category with the box empty to browse its cheapest items.
+3. Type a product (for example "momotaro 0705") and press Search. Results must contain exactly what you typed. Or pick a category with the box empty to browse its cheapest items. Click a size button on any result to see that size's measurements.
 4. Stop the site with Ctrl+C.
 
 ## 3. Test against the real stores
@@ -66,6 +66,14 @@ To look at one product page in detail (for example a store whose size table is n
 4. Add a line to the change log below.
 
 ## Change log
+
+- **Size chart panel, shorter pages, exact search.**
+  1. *Size buttons.* Each product shows its in-stock sizes as buttons (at most 8; "+N sizes" reveals the rest, sold-out ones crossed out). With "My size" set, only that size shows; with fit ranges set, only fitting sizes show.
+  2. *Click a size* and a panel opens under that product: the six measurements for that size (green "within your range" / red above or below, when a fit range is set), the three nearest rows of the store's chart ("Show all N sizes" for the rest), and "Same size at:" buttons to compare other stores. Stores whose chart can't be read show a box saying so, with a link to the product page.
+  3. *One panel at a time.* Opening another size closes the first; Escape or × closes it. On a phone (under 720 px) the panel is a bottom sheet over the list, so the page does not get longer.
+  4. *Shorter lists.* Under All, each category shows its 5 cheapest products with "See all N". Inside one category, 20 products at a time ("Show 20 more"). The filter bar (sort, size, in stock, sale) stays pinned at the top. On the same 120-product test data the All view went from 16,800 px to 6,700 px tall on desktop and from 42,700 px to 15,600 px on a phone.
+  5. *Exact search.* A result must contain what you typed as a phrase, in that order, ignoring case, punctuation and spacing ("momotaro 0705" and "Momotaro0705" find "Momotaro 0705"; "ron" does not find "Iron Heart"; "tapered momotaro" does not find "Momotaro ... Tapered"). The old rule accepted a title containing 60% of the words anywhere. Price alerts use the same rule.
+  6. The prototype was updated to match.
 
 - **Two new size-chart layouts and a stricter detector.** Read from the first full `fit_diagnosis.txt`: (1) BEARS TOKYO writes its chart as slash-separated text (a header line `Size/waist/front rise/...` then one line per size such as `30inc/76cm/30cm/...`, with decimal commas); the parser now reads it, centimetres converted to inches. (2) Reserve Supply gives one size only (`Front rise: 11 1/4", Knee: 18", ... Measurements based on size 32`); the parser records those values for that one size. Chart sizes written like `36(S)` now match variants labelled `36` or `36(S)`. `diagnose_fit.py` now counts a chart only when two measurement words sit among six or more numbers, because ordinary sentences ("high rise", "room through the thigh") and a menu item ("Hem Orders") caused most of the earlier "parser missed" verdicts. Findings: Tendrel, Tate + Yoko, Corlection, Withered Fig have no chart in the page text (prose only); Iron Shop and HeritageQualityGoods (and Withered Fig's "posted measurements") publish charts as photos; these need OCR or are left without fit data.
 
