@@ -18,7 +18,7 @@ Optional env var: `ALERT_INTERVAL_MIN` (60). Email alerts were removed for now (
 - `alerts.db`: SQLite, created on first run.
 
 ## Endpoints
-`/` page · `GET /api/search?q=&category=` · `/api/alerts` (GET/POST/DELETE) · `/api/alerts/check`
+`/` page · `GET /api/search?q=&category=` (20/min) · `/api/alerts` (GET/POST 10/h/DELETE, owner-scoped) · `POST /api/alerts/check` (owner's alerts only, 5/h)
 
 ## How it works
 - Shopify stores: `/products.json` catalog (cached 1h), `/meta.json` for currency. Other stores: search-page scrape (selectors, then JSON-LD, then a heuristic). robots.txt is checked.
@@ -32,6 +32,12 @@ Optional env var: `ALERT_INTERVAL_MIN` (60). Email alerts were removed for now (
 - Ships from: each offer carries `ships_from` (ISO code) and `ships_from_name`, shown as a "Ships from" column. `sites.json` `origin` wins (code or English name); otherwise a Shopify store's `/meta.json` country is used (the shop's registered country, a proxy for where it ships from). It also drives shipping/duty: non-US origin gets the international shipping estimate and duty, even if the store prices in USD. Unknown shows "Unknown" and falls back to currency (USD = domestic).
 - Fit filters apply only under All and Bottoms.
 - Alerts: hourly background thread; can be scoped by category, size and fit ranges. In-app only: the email feature was removed before launch (an open email field lets anyone send mail to any address). If it returns, it needs address validation, double opt-in, unsubscribe and per-address limits. The old `email` DB column is kept for compatibility and ignored.
+
+## Abuse protection
+- Flask-Limiter, per visitor IP, in-memory by default (`LIMITER_STORAGE=redis://...` for several workers). Starting limits: search 20/min, create alert 10/h, check-now 5/h, everything 300/h. Env overrides: `LIMIT_SEARCH`, `LIMIT_ALERT_CREATE`, `LIMIT_ALERT_CHECK`, `LIMIT_DEFAULT`. Over the limit returns 429 JSON with `Retry-After`; the page shows a "wait a minute" message.
+- Set `TRUST_PROXY=<number of proxies>` behind a host/proxy so the limiter sees real visitor IPs.
+- Alert ownership: random `ps_owner` cookie (HttpOnly, SameSite=Lax); list/delete/check only touch that owner's alerts; max 20 each (`MAX_ALERTS_PER_OWNER`). Pre-existing alerts with no owner are hidden. The hourly background job still checks all alerts.
+- Still open before launch: security headers/CSP, only allowing http(s) store links, dependency pinning, privacy policy.
 
 ## Design
 Bauhaus design system, style only: `--dp-*` tokens, Host Grotesk, flat red/blue/yellow planes, square corners, circular search button with hard offset shadow. Under 720px the results table becomes stacked cards (`tr.item`, `data-l` labels).

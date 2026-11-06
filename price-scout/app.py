@@ -1,15 +1,57 @@
 """Price Scout: type a product, and it searches your list of stores for the best prices.
 Run:  pip install -r requirements.txt && python app.py   ->  http://localhost:5000
 """
-import json, os, re, sqlite3, threading, time, urllib.robotparser
+import json, os, re, secrets, sqlite3, threading, time, urllib.robotparser
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote_plus, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, g, jsonify, render_template_string, request
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
+
+# ---------------- Abuse protection ----------------
+# Starting limits, per visitor IP. Override with env vars (no code change) once real traffic shows what is right.
+LIMIT_DEFAULT = os.environ.get("LIMIT_DEFAULT", "300 per hour")        # every route
+LIMIT_SEARCH = os.environ.get("LIMIT_SEARCH", "20 per minute")         # a search fans out to every store
+LIMIT_ALERT_CREATE = os.environ.get("LIMIT_ALERT_CREATE", "10 per hour")
+LIMIT_ALERT_CHECK = os.environ.get("LIMIT_ALERT_CHECK", "5 per hour")  # "Check now" button
+MAX_ALERTS_PER_OWNER = int(os.environ.get("MAX_ALERTS_PER_OWNER", 20))
+if os.environ.get("TRUST_PROXY"):    # number of proxies in front of the app (1 on most hosts); without it every visitor shares one IP
+    _n = int(os.environ["TRUST_PROXY"])
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_n, x_proto=_n, x_host=_n)
+limiter = Limiter(get_remote_address, app=app, default_limits=[LIMIT_DEFAULT],
+                  storage_uri=os.environ.get("LIMITER_STORAGE", "memory://"), headers_enabled=True)   # use redis://... when running several workers
+
+
+@app.errorhandler(429)
+def too_many(e):
+    return jsonify({"error": "Too many requests. Please wait a bit and try again."}), 429
+
+
+# Alerts belong to the browser that made them: a random token in a cookie (no accounts yet).
+OWNER_RE = re.compile(r"[A-Za-z0-9_-]{32}")
+
+
+def owner_id():
+    t = request.cookies.get("ps_owner", "")
+    if OWNER_RE.fullmatch(t):
+        return t
+    if "new_owner" not in g:
+        g.new_owner = secrets.token_urlsafe(24)       # 32 URL-safe characters
+    return g.new_owner
+
+
+@app.after_request
+def set_owner_cookie(resp):
+    t = g.get("new_owner")
+    if t:
+        resp.set_cookie("ps_owner", t, max_age=31536000, httponly=True, samesite="Lax", secure=request.is_secure)
+    return resp
 UA = "Mozilla/5.0 (compatible; PriceScout/1.0)"
 HEADERS = {"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"}
 PRICE_RE = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d+(?:\.\d{2})?)")
@@ -17,7 +59,7 @@ _robots = {}
 
 
 def load_sites():
-    with open("sites.json") as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sites.json")) as f:   # works from any directory
         return json.load(f)
 
 
@@ -620,6 +662,7 @@ def run_search(q, category=None):
 
 
 @app.get("/api/search")
+@limiter.limit(LIMIT_SEARCH)
 def api_search():
     q = request.args.get("q", "").strip()[:120]
     cat = request.args.get("category", "").strip()
@@ -646,6 +689,10 @@ def db():
         pass
     try:
         c.execute("ALTER TABLE alerts ADD COLUMN category TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE alerts ADD COLUMN owner TEXT")   # who may see/delete it; older alerts have none and are not shown
     except sqlite3.OperationalError:
         pass
     return c
@@ -698,9 +745,10 @@ def check_alert(r):
                    best and best["url"], notified, notified_at, r["id"]))
 
 
-def check_all():
+def check_all(owner=None):
+    """Check every alert (the hourly job), or only one visitor's alerts."""
     with db() as c:
-        rows = [dict(x) for x in c.execute("SELECT * FROM alerts")]
+        rows = [dict(x) for x in c.execute("SELECT * FROM alerts" + (" WHERE owner=?" if owner else ""), (owner,) if owner else ())]
     for r in rows:
         try:
             check_alert(r)
@@ -718,11 +766,14 @@ def alert_loop():
 @app.get("/api/alerts")
 def alerts_list():
     with db() as c:
-        rows = [dict(x) for x in c.execute("SELECT * FROM alerts ORDER BY id DESC")]
+        rows = [dict(x) for x in c.execute(
+            """SELECT id, query, size, max_total, created, checked, best_total, best_title, best_site, best_url,
+                      notified_total, notified_at, fit, category FROM alerts WHERE owner=? ORDER BY id DESC""", (owner_id(),))]
     return jsonify({"alerts": rows})
 
 
 @app.post("/api/alerts")
+@limiter.limit(LIMIT_ALERT_CREATE)
 def alerts_add():
     d = request.get_json() or {}
     q = (d.get("query") or "").strip()[:120]
@@ -741,10 +792,13 @@ def alerts_add():
             continue
         if any(v is not None for v in pair):
             fit[k] = pair
+    me = owner_id()
     with db() as c:
-        cur = c.execute("INSERT INTO alerts (query, size, max_total, created, fit, category) VALUES (?,?,?,?,?,?)",
+        if c.execute("SELECT COUNT(*) FROM alerts WHERE owner=?", (me,)).fetchone()[0] >= MAX_ALERTS_PER_OWNER:
+            return jsonify({"error": f"You can have up to {MAX_ALERTS_PER_OWNER} alerts. Delete one first."}), 400
+        cur = c.execute("INSERT INTO alerts (query, size, max_total, created, fit, category, owner) VALUES (?,?,?,?,?,?,?)",
                         (q, (d.get("size") or "").strip()[:20], mx,
-                         time.time(), json.dumps(fit), cat))
+                         time.time(), json.dumps(fit), cat, me))
         row = dict(c.execute("SELECT * FROM alerts WHERE id=?", (cur.lastrowid,)).fetchone())
     threading.Thread(target=check_alert, args=(row,), daemon=True).start()
     return jsonify({"ok": True})
@@ -753,13 +807,14 @@ def alerts_add():
 @app.delete("/api/alerts/<int:aid>")
 def alerts_del(aid):
     with db() as c:
-        c.execute("DELETE FROM alerts WHERE id=?", (aid,))
+        c.execute("DELETE FROM alerts WHERE id=? AND owner=?", (aid, owner_id()))
     return jsonify({"ok": True})
 
 
 @app.post("/api/alerts/check")
+@limiter.limit(LIMIT_ALERT_CHECK)
 def alerts_check_now():
-    check_all()
+    check_all(owner_id())          # only the caller's own alerts
     return jsonify({"ok": True})
 
 
@@ -973,7 +1028,7 @@ async function load(term,cat){
   go.disabled=true;out.innerHTML='<div class="card"><p class="mut">Searching stores…</p></div>';
   try{
     const r=await fetch('/api/search?q='+encodeURIComponent(term)+(cat?'&category='+encodeURIComponent(cat):''));
-    if(!r.ok)throw new Error('HTTP '+r.status);
+    if(!r.ok)throw new Error(r.status===429?'too many searches, please wait a minute and try again':'HTTP '+r.status);
     DATA=await r.json();LASTQ=term;
     const set=new Set();DATA.offers.forEach(o=>o.sizes.forEach(s=>s[1]&&set.add(s[0])));
     $('sizes').innerHTML=[...set].sort((a,b)=>parseFloat(a)-parseFloat(b)||a.localeCompare(b)).slice(0,80).map(s=>`<option value="${esc(s)}">`).join('');
@@ -1013,7 +1068,8 @@ async function loadAlerts(){
 $('mkalert').onclick=async()=>{
   const body={query:LASTQ,category:CAT==='All'?'':CAT,size:sizeIn.value.trim(),fit:fitActive()?fitObj():{},max_total:amax.value};
   const r=await fetch('/api/alerts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  $('amsg').textContent=r.ok?'Alert created. It is checked now, then every hour while this app is running.':'Could not create that alert.';
+  const j=r.ok?{}:await r.json().catch(()=>({}));
+  $('amsg').textContent=r.ok?'Alert created. It is checked now, then every hour while this app is running.':(j.error||'Could not create that alert.');
   setTimeout(loadAlerts,2500);
 };
 $('chk').onclick=async()=>{$('chk').disabled=true;await fetch('/api/alerts/check',{method:'POST'});$('chk').disabled=false;loadAlerts()};

@@ -41,7 +41,16 @@ The cloud sandbox cannot reach the stores, so do this on your own computer.
 3. Alerts are checked now and then every hour while the app is running. Hits show under "Your price alerts"; press "Check now" to check immediately.
 4. Email alerts are removed for now. To change the check interval, set `ALERT_INTERVAL_MIN` (default 60 minutes) before running.
 
-## 6. Check your changes before committing
+## 6. Put it on the internet safely
+
+1. Install the new package first: `pip install -r requirements.txt` (adds `flask-limiter`).
+2. Run it with a production server, not `python app.py`: for example `gunicorn -w 1 app:app` behind HTTPS. Use one worker, because the alert timer and the visitor counters live in the app process; for several workers set `LIMITER_STORAGE=redis://...`.
+3. If a host or proxy sits in front of the app (Render, Fly, nginx), set `TRUST_PROXY=1`. Without it every visitor looks like the same address and shares one limit.
+4. Starting limits per visitor: search 20 per minute, create alert 10 per hour, "Check now" 5 per hour, everything 300 per hour, 20 alerts per browser. Change any of them without editing code: `LIMIT_SEARCH`, `LIMIT_ALERT_CREATE`, `LIMIT_ALERT_CHECK`, `LIMIT_DEFAULT` (for example `LIMIT_SEARCH="30 per minute"`) and `MAX_ALERTS_PER_OWNER`.
+5. After a week of real traffic, look for "429" lines in your host's logs. Many from real people means loosen that limit; none at all and heavy load means tighten it.
+6. Alerts belong to the browser that created them (a private cookie). Clearing cookies or switching browsers means you no longer see them. Alerts made before this change have no owner and are not shown (they stay in `alerts.db`).
+
+## 7. Check your changes before committing
 
 1. Compile check: `python3 -W error -m py_compile app.py check_stores.py`.
 2. Start the site and try a search at a wide window and a phone-width window (under 720 px).
@@ -49,6 +58,8 @@ The cloud sandbox cannot reach the stores, so do this on your own computer.
 4. Add a line to the change log below.
 
 ## Change log
+
+- **Abuse protection.** Per-visitor rate limits (see section 6); alerts are private to the browser that made them (cookie token), at most 20 each; the public "check all alerts" endpoint now only checks the caller's own alerts and is limited to 5 per hour; alert lists no longer include any email data; `sites.json` is found relative to `app.py` so the app starts from any folder. New dependency: `flask-limiter`.
 
 - **Store fixes (merged from live testing).** robots.txt now fetched properly; Self Edge, Celluloid and Brass Tacks read from their own page/catalog formats; Reggieshop added (25 stores); Japanese size option recognised. Re-run `python check_stores.py` to see current coverage.
 
