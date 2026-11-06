@@ -173,13 +173,15 @@ def _plain(text):
 
 
 def matches(title, query):
-    """Exact phrase: what was typed must appear in the title, in that order, ignoring case, punctuation and spacing.
-    No fuzzy or partial-word matching ('ron' does not find 'Iron Heart'; 'momotaro0705' does find 'Momotaro 0705')."""
+    """Every word typed must appear in the title as a whole word, in any order, ignoring case and punctuation.
+    No fuzzy or partial-word matching ('ron' does not find 'Iron Heart'). A typed word containing a digit may be
+    the start of a model number ('0705' finds '0705SP'). Typing with no spaces ('momotaro0705') also works."""
     q = _plain(query)
     if not q:
         return True
     t = _plain(title)
-    if f" {q} " in f" {t} ":
+    words = t.split()
+    if all(any(w == x or (any(c.isdigit() for c in x) and w.startswith(x)) for w in words) for x in q.split()):
         return True
     sq = q.replace(" ", "")
     return len(sq) >= 5 and sq in t.replace(" ", "")

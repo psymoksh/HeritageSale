@@ -245,10 +245,12 @@ function compute(d){
     measures:(d.cat==='Bottoms'&&!d.nochart)?measOf(d):[]};
 }
 function matches(d,t){
-  const pl=x=>x.toLowerCase().replace(/[\W_]+/g,' ').trim(),q=pl(t),h=pl(d.title);   // exact phrase: in order, ignoring case, punctuation, spacing
+  const pl=x=>x.toLowerCase().replace(/[\W_]+/g,' ').trim(),q=pl(t),h=pl(d.title);   // every typed word as a whole word, any order
   if(!q)return true;
+  const words=h.split(' ');
+  if(q.split(' ').every(x=>words.some(w=>w===x||(/\d/.test(x)&&w.startsWith(x)))))return true;
   const sq=q.replace(/ /g,'');
-  return (' '+h+' ').includes(' '+q+' ')||(sq.length>=5&&h.replace(/ /g,'').includes(sq));
+  return sq.length>=5&&h.replace(/ /g,'').includes(sq);
 }
 const stripP=s=>String(s).replace(/\(.*?\)/g,'');
 const sameSize=(a,b)=>sizeMatch(a,b)||sizeMatch(b,a)||norm(stripP(a))===norm(stripP(b));
