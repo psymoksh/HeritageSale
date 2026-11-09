@@ -149,6 +149,7 @@ table.ct{display:table}table.ct tbody{display:table-row-group}table.ct tr{displa
 .ctw{overflow-x:auto}table.ct{font-size:12px}table.ct th,table.ct td{padding:4px 5px}
 tr.item{scroll-margin-top:150px}
 #ctl{padding:8px 14px;gap:6px 14px}#ctl select,#ctl input:not([type=checkbox]){padding:6px 8px;font-size:15px}}
+.foot{padding:18px var(--dp-spacing-gutter) 40px;font-size:var(--dp-typography-caption)}.foot a{color:var(--dp-color-field);font-weight:var(--dp-typography-weight-label)}
 </style>
 </head>
 <body>
@@ -172,6 +173,7 @@ tr.item{scroll-margin-top:150px}
 <details id="alerts" hidden><summary>Your price alerts</summary><div class="card"><div id="alist"></div>
 <p class="mut">The real app checks alerts every hour while it is running and shows hits here.</p></div></details>
 </main>
+<footer class="foot"><a href="#" onclick="return false">Privacy</a> · Prices are estimates; check each store before you buy.</footer>
 <script>
 const RATES={USD:1,JPY:150,EUR:0.92};
 const STORES={'Blue Owl':{origin:'US',cur:'USD',free:300},'Self Edge':{origin:'US',cur:'USD',free:300},'Okayama Denim':{origin:'JP',cur:'JPY'},'Denimio':{origin:'JP',cur:'USD'},'dc4':{origin:'EU',cur:'EUR'},'Rodeo Japan':{origin:'US',cur:'USD'},'Hinoya':{origin:'JP',cur:'JPY'}};
