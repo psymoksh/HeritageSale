@@ -594,6 +594,8 @@ def measure_rows(p, extra=None):
         m = re.search(r"\((.+?)\)", l)
         if m:
             avail.setdefault(clean(m.group(1)), (l, a))        # chart says "S", variant is "36(S)"
+        for part in re.split(r"\s*\|\s*", l) if "|" in l else []:
+            avail.setdefault(clean(part), (l, a))               # chart says "S", variant is "4 | S"
     out = []
     for label, vals in {**(extra or {}), **parse_charts(p.get("body_html"))}.items():
         inner = re.search(r"\((.+?)\)", label)
@@ -1075,7 +1077,7 @@ def db():
 def size_match(label, want):
     """'36(S)' matches a wanted 36 or S; '32 / 34' matches 32 or 34."""
     norm = lambda x: re.sub(r"^w(?=\d)", "", re.sub(r"\s+", "", x.lower()))
-    parts = [label] + re.split(r"\s*[/,]\s*|\s+x\s+", label.lower())
+    parts = [label] + re.split(r"\s*[/,|]\s*|\s+x\s+", label.lower())
     m = re.match(r"^(.*?)\s*\((.+)\)\s*$", label)
     if m:
         parts += [m.group(1), m.group(2)]
@@ -1426,7 +1428,7 @@ const ls={get:k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}},se
 const money=(v,c)=>{try{return new Intl.NumberFormat('en-US',{style:'currency',currency:c}).format(v)}catch(e){return v.toFixed(2)+' '+c}};
 const usdOrBlank=v=>v==null?'n/a':money(v,'USD');
 const norm=s=>s.toLowerCase().replace(/\s+/g,'').replace(/^w(?=\d)/,'');
-const sizeParts=l=>{const s=[l].concat(l.split(/\s*[\/,]\s*|\s+x\s+/i)),m=l.match(/^(.*?)\s*\((.+)\)\s*$/);if(m)s.push(m[1],m[2]);return s};   // "36(S)" -> 36 and S too
+const sizeParts=l=>{const s=[l].concat(l.split(/\s*[\/,|]\s*|\s+x\s+/i)),m=l.match(/^(.*?)\s*\((.+)\)\s*$/);if(m)s.push(m[1],m[2]);return s};   // "36(S)" -> 36 and S too
 const sizeMatch=(label,want)=>sizeParts(label).some(p=>norm(p)===norm(want));
 let SIZES=[];   // committed sizes (tags); whatever is still being typed counts too, so results filter as you type
 const parseSizes=t=>String(t||'').split(/[,;]+/).map(x=>x.trim()).filter(Boolean);

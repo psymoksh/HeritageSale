@@ -87,6 +87,8 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 
 ## Change log
 
+- **Withered Fig sizes like "4 | S".** Size labels written with a bar (`4 | S`) now match a wanted S or 4, and a size chart that says S lines up with the button. Withered Fig's size buttons were already built; its product pages show no size chart the app can read (checked on the Cropped Worker's Wool Tweed Jacket), so those products show a "no readable chart" box with a link.
+
 - **Hinoya tops charts.** Hinoya's size chart (`Size  Shoulder  Chest  Back Length  Sleeve`, sizes S to 3L(XXL), values in cm) is read whether the page builds it as a table or as tab- or space-separated text. A chart size such as `3L(XXL)` now also matches a size button called `XXL` or `3L`.
 
 - **Why a store shows e.g. 5/10 measurements.** `check_stores.py -s "store" -c Tops` now lists, under the table, each sampled product with no readable measurements: whether it is in stock or sold out, its sizes and its URL. Also, a chart that says `S` / `M` / `L` now matches a size button called `36(S)` / `38(M)`.
