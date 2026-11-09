@@ -851,7 +851,8 @@ def esc_guides(script_url):
 
 def esc_charts(url, html):
     """Chart for a product whose page loads the ESC size-guide app, parsed like any other table. {} if none."""
-    m = ESC_SCRIPT.search(html or "")
+    html = (html or "").replace("\\/", "/")   # the address sits in a script's URL list as https:\/\/host\/file.js
+    m = ESC_SCRIPT.search(html)
     if not m:
         return {}
     script = m.group(0)
