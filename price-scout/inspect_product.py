@@ -6,11 +6,32 @@ import requests
 import app
 
 
+def fetch_product(url):
+    """Product data from <url>.js (has availability); falls back to <url>.json (no availability) if the store blocks .js."""
+    tried = []
+    for suffix in (".js", ".json"):
+        r = requests.get(url + suffix, headers=app.HEADERS, timeout=20, allow_redirects=True)
+        try:
+            j = r.json()
+        except ValueError:
+            tried.append(f"{url + suffix} -> HTTP {r.status_code}, {r.headers.get('content-type', '?')}, starts: {r.text[:120]!r}")
+            continue
+        if suffix == ".json":
+            j = j["product"]
+            j["description"] = j.get("body_html")
+            j["type"] = j.get("product_type")
+            for v in j["variants"]:
+                v.setdefault("available", True)    # .json does not say; treat every size as in stock
+            print("NOTE: this store did not return .js, so stock is unknown (all sizes shown as in stock).")
+        return j
+    sys.exit("Could not read product data. Check the URL is a full product page (https://store.com/products/handle).\n" + "\n".join(tried))
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     url = sys.argv[1].split("?")[0].rstrip("/")
-    j = requests.get(url + ".js", headers=app.HEADERS, timeout=20).json()
+    j = fetch_product(url)
     opts = [o["name"] if isinstance(o, dict) else o for o in j.get("options", [])]
     p = {"title": j["title"], "vendor": j.get("vendor"), "product_type": j.get("type") or j.get("product_type", ""),
          "tags": j.get("tags", []), "body_html": j.get("description") or j.get("body_html"),
@@ -34,7 +55,7 @@ def main():
         cat_prices = "unavailable"
     print("Store currency (/meta.json):", meta.get("currency"), "| country:", meta.get("country"))
     print("Price in catalog (.json):   ", cat_prices, "(this is what the app uses; the cheapest in-stock variant)")
-    print("Price in product JS (.js):  ", [round(v.get("price", 0) / 100, 2) for v in j["variants"]], "(cents / 100)")
+    print("Price in product JS (.js):  ", [round(v["price"] / 100, 2) if isinstance(v.get("price"), (int, float)) else v.get("price") for v in j["variants"]], "(cents / 100)")
     desc = app.parse_charts(p["body_html"])
     print("Chart in description:", list(desc) or "none")
     html = requests.get(url, headers=app.HEADERS, timeout=20).text
