@@ -425,7 +425,7 @@ def measure_key(text):
         return "sleeve"
     if "shoulder" in t:
         return "shoulder"
-    for key, words in (("chest", ("chest", "bust", "pit to pit", "pit pit", "armpit", "underarm", "ptp")),
+    for key, words in (("chest", ("chest", "bust", "pit to pit", "pit pit", "armpit", "underarm", "ptp", "body width")),
                        ("waist", ("waist",)), ("thigh", ("thigh",)), ("knee", ("knee",)),
                        ("leg_opening", ("opening", "hem", "bottom")), ("length", ("length", "back len", "body len"))):
         if any(w in t for w in words):
@@ -434,7 +434,7 @@ def measure_key(text):
 
 
 SIZE_LINE = re.compile(r"^\s*(?:size\s*)?(w?\d{2}(?:\s*[x/]\s*\d{2})?|(?:[2-5]xl|x{0,3}[sl]|m|small|medium|large)(?![a-z]))\s*[:\-\u2013|]\s*(.+)$", re.I)
-PAIR = re.compile(r"(waist|thigh|front\s*rise|back\s*rise|rise|knee|leg\s*opening|opening|hem|chest|bust|pit\s*to\s*pit|shoulders?|sleeve(?:\s*length)?|(?:back|body|total)\s*length|length)\s*[:=]?\s*"
+PAIR = re.compile(r"(waist|thigh|front\s*rise|back\s*rise|rise|knee|leg\s*opening|opening|hem|chest|bust|body\s*width|pit\s*to\s*pit|shoulders?|sleeve(?:\s*length)?|(?:back|body|total)\s*length|length)\s*[:=]?\s*"
                   r"(\d+(?:\.\d+)?(?:\s+\d+/\d+|[½¼¾⅛⅜⅝⅞])?|[½¼¾⅛⅜⅝⅞])", re.I)
 
 
@@ -485,7 +485,7 @@ def parse_charts(html):
         m = SIZE_LINE.match(line)
         if not m:
             continue
-        div = 2.54 if re.search(r"\bcm\b", line, re.I) else 1.0
+        div = 2.54 if re.search(r"(?<![a-z])cm\b", line, re.I) else 1.0
         vals = {}
         for name, num in PAIR.findall(m.group(2)):
             k, v = measure_key(name), parse_num(num)
@@ -500,7 +500,7 @@ def parse_charts(html):
         m = BASE_SIZE.search(line)
         if not m:
             continue
-        div = 2.54 if re.search(r"\bcm\b", line, re.I) else 1.0
+        div = 2.54 if re.search(r"(?<![a-z])cm\b", line, re.I) else 1.0
         vals = {}
         for name, num in PAIR.findall(line):
             k, v = measure_key(name), parse_num(num)
@@ -511,7 +511,7 @@ def parse_charts(html):
                 out.setdefault(m.group(1).strip(), {}).setdefault(k, v)
     for tb in soup.find_all("table"):
         text = tb.get_text(" ").lower()
-        metric = re.search(r"\bcm\b|センチ", text) or re.search(r"[ぁ-んァ-ヶ一-龥]", text)   # Japanese charts are in cm even when the unit is not printed
+        metric = re.search(r"(?<![a-z])cm\b|センチ", text) or re.search(r"[ぁ-んァ-ヶ一-龥]", text)   # Japanese charts are in cm even when the unit is not printed
         div = 2.54 if metric and not re.search(r"\binch|\bin\b|\"", text) else 1.0
         rows = [[c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"])] for tr in tb.find_all("tr")]
         rows = [r for r in rows if any(r)]

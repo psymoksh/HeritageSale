@@ -12,7 +12,7 @@ import argparse, re, sys
 from bs4 import BeautifulSoup
 import app
 
-WORDS = re.compile(r"\b(waist|thigh|front rise|back rise|rise|inseam|leg opening|knee|hem|chest|bust|pit to pit|shoulders?|sleeves?|back length|body length)\b", re.I)
+WORDS = re.compile(r"\b(waist|thigh|front rise|back rise|rise|inseam|leg opening|knee|hem|chest|bust|body width|pit to pit|shoulders?|sleeves?|back length|body length)\b", re.I)
 
 
 JP_WORDS = re.compile("ウエスト|ウェスト|股上|股下|ワタリ|わたり|渡り|太もも|ひざ|膝|裾幅|裾周り|裾回り|ヒップ|身幅|肩幅|着丈|袖丈|裄丈|胸囲|バスト")
