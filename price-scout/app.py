@@ -787,6 +787,10 @@ def search_site(site, query, category=None):
             found = (from_selectors(soup, site, url) if "item" in site else []) \
                 or from_jsonld(soup, url) or from_heuristic(soup, url)
         cur, assumed = store_currency(site, base, bool(products))
+        if products and not site.get("currency") and cur == "JPY" and found:
+            prices = sorted(p for _, p, *_ in found if p)
+            if prices and prices[len(prices) // 2] < 1000:   # a store that says JPY but lists 142.03 is pricing in dollars (BEARS TOKYO's catalog): never read that as yen
+                cur, assumed = "USD", True
         ships_from = store_country(site, base, bool(products))
         offers = []
         for t, p, u, *rest in found:

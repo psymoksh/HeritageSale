@@ -56,7 +56,9 @@
   },
   {
     "name": "BEARS TOKYO",
-    "base_url": "https://bears-tokyo.myshopify.com"
+    "base_url": "https://bears-tokyo.myshopify.com",
+    "currency": "USD",
+    "origin": "JP"
   },
   {
     "name": "Blue Seven",

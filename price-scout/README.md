@@ -87,6 +87,8 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 
 ## Change log
 
+- **BEARS TOKYO prices fixed.** The store's settings say its currency is yen, but its catalog and product pages price in US dollars (a Sugar Cane shirt is 142.03, i.e. $142.03). The app read that as ¥142 and converted it to about 95 cents. BEARS TOKYO is now set to USD in `sites.json` (it still ships from Japan, so shipping and duty are unchanged), and the app also guards against the same mistake at any other store: if a store says yen but its typical price is under 1,000, it is treated as dollars and the page shows the "currency not detected" note.
+
 - **inspect_product.py shows prices.** It now prints the store's currency, the catalog price the app uses and the price the page itself shows visitors, to find why a store's prices look wrong.
 
 - **Reggieshop tops: centimetres written as "72cm" and "Body width".** Two chart-reading fixes found on a real Reggieshop shirt page. (1) A chart whose cells read `72cm` (unit attached to the number) was not recognised as centimetres, so 72 was treated as 72 inches; cm is now detected in both tables and text charts. Any store that writes sizes like `81cm` was affected, and its measurements will now be correct. (2) "Body width" now means chest. Japanese 着丈 / 身幅 / 肩幅 / 袖丈 charts already worked. `inspect_product.py URL` shows what the app sees for one product.
