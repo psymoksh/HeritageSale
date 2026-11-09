@@ -60,9 +60,10 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 3. If a host or proxy sits in front of the app (Render, Fly, nginx), set `TRUST_PROXY=1`. Without it every visitor looks like the same address and shares one limit.
 4. Starting limits per visitor: search 20 per minute, create alert 10 per hour, "Check now" 5 per hour, size-chart loading 600 per hour, everything else 300 per hour, 20 alerts per browser. Change any of them without editing code: `LIMIT_SEARCH`, `LIMIT_ALERT_CREATE`, `LIMIT_ALERT_CHECK`, `LIMIT_FIT`, `LIMIT_DEFAULT` (for example `LIMIT_SEARCH="30 per minute"`) and `MAX_ALERTS_PER_OWNER`.
 5. After a week of real traffic, look for "429" lines in your host's logs. Many from real people means loosen that limit; none at all and heavy load means tighten it.
-6. Alerts belong to the browser that created them (a private cookie). Clearing cookies or switching browsers means you no longer see them. Alerts made before this change have no owner and are not shown (they stay in `alerts.db`).
-7. Privacy page: the site serves `/privacy` and links it in the footer. Set `CONTACT_EMAIL=you@example.com` so it shows a contact line, and read the text once to be sure it matches what you do. It is a plain-language description, not legal advice.
-8. Security headers are sent automatically (content security policy, no framing, no content sniffing, HTTPS-only when served over HTTPS). Check the live site at securityheaders.com after you deploy. If you add a script, a font or an image source from another website, the policy blocks it until you allow it in `csp()` in `app.py`.
+6. Alerts live in a small SQLite file, `alerts.db`. Most hosts wipe the app's disk on every deploy or restart, which would delete everyone's alerts. Attach a persistent disk (Render "Disk", Fly "Volume", Railway "Volume") mounted at, say, `/data`, and set `ALERTS_DB=/data/alerts.db` and `CACHE_DIR=/data/cache`. Back the file up now and then by copying it. Without a disk the site works, but alerts reset on each deploy.
+7. Alerts belong to the browser that created them (a private cookie). Clearing cookies or switching browsers means you no longer see them. Alerts made before this change have no owner and are not shown (they stay in `alerts.db`).
+8. Privacy page: the site serves `/privacy` and links it in the footer. Set `CONTACT_EMAIL=you@example.com` so it shows a contact line, and read the text once to be sure it matches what you do. It is a plain-language description, not legal advice.
+9. Security headers are sent automatically (content security policy, no framing, no content sniffing, HTTPS-only when served over HTTPS). Check the live site at securityheaders.com after you deploy. If you add a script, a font or an image source from another website, the policy blocks it until you allow it in `csp()` in `app.py`.
 
 ## 6b. Speed: warm cache and lazy size charts
 
@@ -79,6 +80,8 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 4. Add a line to the change log below.
 
 ## Change log
+
+- **Alerts database location.** `ALERTS_DB` sets where `alerts.db` is stored (its folder is created if missing), so it can sit on a host's persistent disk. Default is unchanged (next to `app.py`).
 
 - **Faster first search, and launch hardening.** *Speed:* store catalogs are now refreshed in the background every 30 minutes and saved to a `cache/` folder, so a search no longer waits on 25 stores and a restart is instant; an hour-old catalog is shown at once while a fresh one loads, and a failing store keeps its last good copy. Converting 8,000 products per store happens once per catalog instead of once per search. Size charts that live on product pages load after the results appear (`POST /api/fit`, ten at a time) instead of holding up the search; the page shows "reading N more size charts…". *Security:* every response now carries a content security policy (scripts and styles only with a per-page random nonce), no-framing, no-sniffing, referrer and permissions headers, HSTS over HTTPS, and no caching of API replies; the one inline event handler was removed. Listing links and images must be http(s): the server drops anything else and the page double-checks. The size-chart loader only fetches pages on our own stores' hosts. Dependencies are pinned to exact versions in `requirements.txt` (`requirements.in` lists the direct ones). A privacy page at `/privacy` is linked in the footer. See sections 6 and 6b for the settings.
 

@@ -1000,10 +1000,11 @@ def start_background():
 
 
 # ---------------- Price alerts (SQLite; checked hourly while the app runs) ----------------
-DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alerts.db")
+DB = os.environ.get("ALERTS_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "alerts.db")   # point at a persistent disk when hosting
 
 
 def db():
+    os.makedirs(os.path.dirname(os.path.abspath(DB)), exist_ok=True)
     c = sqlite3.connect(DB, timeout=10)
     c.row_factory = sqlite3.Row
     c.execute("""CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY, query TEXT, size TEXT,
