@@ -87,6 +87,8 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 
 ## Change log
 
+- **Finding script-loaded size charts.** `diagnose_fit.py --dump URL` now also names any size-chart app it finds in the page (Kiwi Sizing, Size Chart King and similar) and lists addresses that mention size, chart or measure. Withered Fig's page has no table in its raw HTML (a script adds it), so this shows where the chart data comes from.
+
 - **Withered Fig sizes like "4 | S".** Size labels written with a bar (`4 | S`) now match a wanted S or 4, and a size chart that says S lines up with the button. Withered Fig's size buttons were already built; its product pages show no size chart the app can read (checked on the Cropped Worker's Wool Tweed Jacket), so those products show a "no readable chart" box with a link.
 
 - **Hinoya tops charts.** Hinoya's size chart (`Size  Shoulder  Chest  Back Length  Sleeve`, sizes S to 3L(XXL), values in cm) is read whether the page builds it as a table or as tab- or space-separated text. A chart size such as `3L(XXL)` now also matches a size button called `XXL` or `3L`.
