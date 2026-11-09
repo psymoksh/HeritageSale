@@ -144,7 +144,8 @@ def dump(url):
     for i, tb in enumerate(soup.find_all("table")[:4]):
         rows = [[c.get_text(' ', strip=True) for c in tr.find_all(['th', 'td'])] for tr in tb.find_all('tr')][:6]
         print(f"table {i + 1} first rows: {rows}")
-    print(f"scripts that mention size/chart: {len(scripts)}" + (f"; first: {re.sub(r'\s+', ' ', scripts[0])[:300]}" if scripts else ""))
+    first = re.sub(r"\s+", " ", scripts[0])[:300] if scripts else ""
+    print(f"scripts that mention size/chart: {len(scripts)}" + (f"; first: {first}" if scripts else ""))
     apps = sorted({m.lower() for m in re.findall(r"kiwi[\w-]*|size[-_ ]?chart[\w-]*|sizechart[\w-]*|sizeguide[\w-]*|size[-_ ]?guide[\w-]*|sizegenie|esc[-_]size[\w-]*|avada[-_ ]?size[\w-]*|fitanalytics|true[-_ ]?fit|fit[-_ ]?predictor|measurement[s]?[-_ ][\w-]*", html, re.I)})[:12]
     urls = sorted({u for u in re.findall(r"https?:[\\/]+[^\"'\s<>)]*", html) if re.search(r"size|chart|measure|fit", u, re.I) and not re.search(r"\.(png|jpe?g|gif|webp|svg)(\?|$)", u, re.I)})[:8]
     print(f"size-chart app names found in the page: {apps or 'none'}")
