@@ -1284,6 +1284,7 @@ function search(){
   if(CAT!=='All'){load('',CAT);return}
   showHint();
 }
+function newSearch(){if(q.value.trim())CAT='All';search()}   // a new search starts from All; picking a category afterwards narrows it
 function pickCat(c){
   CAT=c;const term=q.value.trim();
   if(DATA&&!DATA.browse&&term&&term===LASTQ){render();return}            // same search: just filter what we have
@@ -1313,7 +1314,7 @@ $('mkalert').onclick=async()=>{
   setTimeout(loadAlerts,2500);
 };
 $('chk').onclick=async()=>{$('chk').disabled=true;await fetch('/api/alerts/check',{method:'POST'});$('chk').disabled=false;loadAlerts()};
-go.onclick=search;sortSel.onchange=stockBox.onchange=saleBox.onchange=render;
+go.onclick=newSearch;sortSel.onchange=stockBox.onchange=saleBox.onchange=render;
 $('cats').onclick=e=>{const b=e.target.closest('[data-cat]');if(b)pickCat(b.dataset.cat)};
 out.onclick=e=>{
   const z=e.target.closest('[data-sz]');
@@ -1334,7 +1335,7 @@ sizeIn.oninput=render;sizeIn.onchange=commitSize;
 sizeIn.onkeydown=e=>{if(e.key==='Enter'||e.key===','){e.preventDefault();commitSize()}else if(e.key==='Backspace'&&!sizeIn.value&&SIZES.length){SIZES.pop();saveSizes();drawSizes();render()}};
 $('sizebox').onclick=e=>{const b=e.target.closest('[data-rm]');if(b){SIZES.splice(+b.dataset.rm,1);saveSizes();drawSizes();render();sizeIn.focus()}};
 document.querySelectorAll('.fit input').forEach(i=>i.oninput=render);
-q.addEventListener('keydown',e=>{if(e.key==='Enter')search()});
+q.addEventListener('keydown',e=>{if(e.key==='Enter')newSearch()});
 buildCats();updateCats(null);drawSizes();
 loadAlerts();setInterval(loadAlerts,60000);
 </script></html>"""
