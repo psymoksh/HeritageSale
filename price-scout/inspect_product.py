@@ -22,9 +22,24 @@ def main():
     print("Variants:    ", [(v["title"], v["available"]) for v in p["variants"]])
     print("Category:    ", app.categorize(p["product_type"], p["title"], p["tags"]), f'(product_type={p["product_type"]!r})')
     print("Size buttons:", app.variant_sizes(p) or "NONE: no option is named Size/サイズ (and it is not the only option)")
+    base = "/".join(url.split("/")[:3])
+    try:
+        meta = requests.get(base + "/meta.json", headers=app.HEADERS, timeout=15).json()
+    except Exception:
+        meta = {}
+    try:
+        pj = requests.get(url + ".json", headers=app.HEADERS, timeout=15).json()["product"]["variants"]
+        cat_prices = [v["price"] for v in pj]
+    except Exception:
+        cat_prices = "unavailable"
+    print("Store currency (/meta.json):", meta.get("currency"), "| country:", meta.get("country"))
+    print("Price in catalog (.json):   ", cat_prices, "(this is what the app uses; the cheapest in-stock variant)")
+    print("Price in product JS (.js):  ", [round(v.get("price", 0) / 100, 2) for v in j["variants"]], "(cents / 100)")
     desc = app.parse_charts(p["body_html"])
     print("Chart in description:", list(desc) or "none")
     html = requests.get(url, headers=app.HEADERS, timeout=20).text
+    ld = re.findall(r'"priceCurrency"\s*:\s*"([A-Z]{3})"[^}]*?"price"\s*:\s*"?([\d.,]+)|"price"\s*:\s*"?([\d.,]+)"?[^}]*?"priceCurrency"\s*:\s*"([A-Z]{3})', html)
+    print("Price shown to visitors (page data):", ld[:4] or "not found in page")
     page = app.parse_charts(html)
     print("Chart on page:       ", list(page) or "none")
     rows = app.measure_rows(p, page)

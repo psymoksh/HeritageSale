@@ -38,7 +38,7 @@ To look at one product page in detail (for example a store whose size table is n
 ### 3d. Find out why one product shows no sizes or measurements
 
 1. Run `python3 inspect_product.py "https://store.com/products/the-product"`.
-2. Read the lines it prints: the option names, the size buttons the app builds from them, the category, and whether a size chart was found in the description or on the page and matched to a size.
+2. Read the lines it prints: the store currency and the price (catalog price the app uses next to the price the page shows visitors), the option names, the size buttons the app builds from them, the category, and whether a size chart was found in the description or on the page and matched to a size.
 3. Paste the output when asking for a fix.
 
 ### 3c. Find out why a search finds nothing at one store
@@ -86,6 +86,8 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 4. Add a line to the change log below.
 
 ## Change log
+
+- **inspect_product.py shows prices.** It now prints the store's currency, the catalog price the app uses and the price the page itself shows visitors, to find why a store's prices look wrong.
 
 - **Reggieshop tops: centimetres written as "72cm" and "Body width".** Two chart-reading fixes found on a real Reggieshop shirt page. (1) A chart whose cells read `72cm` (unit attached to the number) was not recognised as centimetres, so 72 was treated as 72 inches; cm is now detected in both tables and text charts. Any store that writes sizes like `81cm` was affected, and its measurements will now be correct. (2) "Body width" now means chest. Japanese 着丈 / 身幅 / 肩幅 / 袖丈 charts already worked. `inspect_product.py URL` shows what the app sees for one product.
 
