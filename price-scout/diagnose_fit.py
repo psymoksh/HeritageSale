@@ -92,7 +92,10 @@ def run(site, out):
         page = {"parsed": {}, "words": False, "images": [], "iframes": 0, "snippet": "", "raw": "", "chars": 0, "tables": 0}
         try:
             if app.allowed(url):
-                page = inspect(app.requests.get(url, headers=app.HEADERS, timeout=15).text)
+                html = app.requests.get(url, headers=app.HEADERS, timeout=15).text
+                page = inspect(html)
+                if not page["parsed"]:   # chart drawn by the ESC size-guide app from its script (Withered Fig)
+                    page["parsed"] = app.esc_charts(url, html)
             else:
                 out.write("  robots.txt disallows the product page\n")
         except Exception as e:
@@ -127,6 +130,9 @@ def dump(url):
     print(f"tables in the raw HTML: {info['tables']}; iframes: {[i.get('src') for i in soup.find_all('iframe')][:5]}")
     print(f"measurement words in visible text (English or Japanese): {info['words']}")
     print(f"parser read {len(info['parsed'])} sizes: {dict(list(info['parsed'].items())[:3])}")
+    esc = app.esc_charts(url, html)
+    print(f"ESC size-guide script reader: {len(esc)} sizes {dict(list(esc.items())[:2])}" if esc else
+          "ESC size-guide script reader: nothing (no script address in the page, or no chart with this product's tags)")
     for i, tb in enumerate(soup.find_all("table")[:4]):
         rows = [[c.get_text(' ', strip=True) for c in tr.find_all(['th', 'td'])] for tr in tb.find_all('tr')][:6]
         print(f"table {i + 1} first rows: {rows}")
