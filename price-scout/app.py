@@ -683,7 +683,7 @@ def from_shopify(base, products):
             "match": f'{title} {p.get("product_type", "")} {" ".join(tags)}',
             "sizes": variant_sizes(p),
             "category": categorize(p.get("product_type", ""), p["title"], tags),
-            "measures": lambda extra=None, p=p: measure_rows(p, extra),   # parsed lazily, only for matching products
+            "measures": lambda extra=None, p=p: measure_rows(p, extra or esc_product_charts(base, p)),   # parsed lazily, only for matching products
             "was": was if was > price else None,
             "codes": sorted({str(x.get("barcode")).strip() for x in variants if len(str(x.get("barcode") or "").strip()) >= 8}),
             "image": img and img + ("&" if "?" in img else "?") + "width=160",
@@ -856,17 +856,49 @@ def esc_guides(script_url):
         except Exception as e:
             print(f"[esc] could not read {script_url}: {e}", flush=True)
         _esc[script_url] = (time.time() if guides else time.time() - 21600 + 300, guides)
+        for k in [k for k in _esc_parsed if k[0] == script_url]:
+            del _esc_parsed[k]   # parsed copies of the old download
         return guides
+
+
+_esc_store = {}    # store host -> (checked_at, ESC script url or "") : which stores use the app
+_esc_parsed = {}   # (script, tag) -> parsed chart, so a search never re-parses the same table
+
+
+def _host(u):
+    return urlparse(u).netloc.lower()
+
+
+def esc_script_in(html):
+    """Address of the ESC size-guide script if this page loads it (it sits in a script's URL list as https:\\/\\/...)."""
+    m = ESC_SCRIPT.search((html or "").replace("\\/", "/"))
+    if not m:
+        return ""
+    return "https:" + m.group(0) if m.group(0).startswith("//") else m.group(0)
+
+
+def esc_tag_chart(script, tags, download=True):
+    """Parsed chart for the first of these product tags that has one in the store's ESC script. {} if none.
+    download=False only uses a script already in memory (the search path must never wait on a 5 MB file)."""
+    guides = esc_guides(script) if download else (_esc.get(script) or (0, {}))[1]
+    for t in tags or []:
+        t = str(t).strip().lower()
+        rows = guides.get(t)
+        if rows:
+            key = (script, t, id(guides))
+            if key not in _esc_parsed:
+                table = "".join("<tr>" + "".join(f"<td>{escape(c)}</td>" for c in row) + "</tr>" for row in rows)
+                _esc_parsed[key] = parse_charts(f"<table>{table}</table>")
+            return _esc_parsed[key]
+    return {}
 
 
 def esc_charts(url, html):
     """Chart for a product whose page loads the ESC size-guide app, parsed like any other table. {} if none."""
-    html = (html or "").replace("\\/", "/")   # the address sits in a script's URL list as https:\/\/host\/file.js
-    m = ESC_SCRIPT.search(html)
-    if not m:
+    script = esc_script_in(html)
+    if not script:
         return {}
-    script = m.group(0)
-    script = "https:" + script if script.startswith("//") else script
+    _esc_store[_host(url)] = (time.time(), script)
     tags = re.search(r'data-tags="([^"]*)"', html)
     tags = tags.group(1).split(",") if tags else []
     if not tags:  # theme did not print them: use the product's own tags
@@ -875,13 +907,43 @@ def esc_charts(url, html):
             tags = (r.json().get("tags") or [])
         except Exception:
             tags = []
-    guides = esc_guides(script)
-    for t in tags:
-        rows = guides.get(t.strip().lower())
-        if rows:
-            table = "".join("<tr>" + "".join(f"<td>{escape(c)}</td>" for c in row) + "</tr>" for row in rows)
-            return parse_charts(f"<table>{table}</table>")
-    return {}
+    return esc_tag_chart(script, tags)
+
+
+def esc_product_charts(base, p):
+    """For a store known to use the ESC app: the product's chart straight from its catalog tags, no page fetch.
+    None when the store does not use the app (or its script is not loaded yet), so the normal page fallback runs."""
+    hit = _esc_store.get(_host(base))
+    if not hit or not hit[1]:
+        return None
+    tags = p.get("tags") or []
+    tags = tags.split(",") if isinstance(tags, str) else tags
+    return esc_tag_chart(hit[1], tags, download=False) or None
+
+
+def esc_probe(base, products):
+    """Warm-up: does this store use the ESC size-guide app? Checks ONE product page per store a day,
+    then keeps the store's script loaded so every product gets its chart from its tags."""
+    host = _host(base)
+    hit = _esc_store.get(host)
+    if hit and time.time() - hit[0] < 86400:
+        if hit[1]:
+            esc_guides(hit[1])   # refreshes when older than 6 hours
+        return
+    p = next((p for p in products or [] if p.get("tags")), None)
+    if not p:
+        return
+    url = product_url(base, p)
+    script = ""
+    try:
+        if allowed(url):
+            r = requests.get(url, headers=HEADERS, timeout=15)
+            script = esc_script_in(r.text)
+    except Exception:
+        return   # try again next round
+    _esc_store[host] = (time.time(), script)
+    if script:
+        esc_guides(script)
 
 
 MAX_PAGE_FETCHES = 10  # per store, per search; results are cached
@@ -1098,8 +1160,9 @@ def prewarm_once():
             if site.get("type") == "square":
                 get_square_catalog(base, site, max_age=WARM_EVERY)
             else:
-                get_catalog(base, max_age=WARM_EVERY)
+                products = get_catalog(base, max_age=WARM_EVERY)
                 shop_meta(base)
+                esc_probe(base, products)   # stores using the ESC size-guide app (Withered Fig): load all charts once
         except Exception:
             pass
     with ThreadPoolExecutor(6) as ex:
