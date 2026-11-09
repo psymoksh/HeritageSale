@@ -87,6 +87,8 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 
 ## Change log
 
+- **Sizes like "36(S)" now match "S" or "36", and more size options are found.** Stores such as BEARS TOKYO label sizes `36(S)`; typing S or 36 in "My sizes" used to hide those products. Both sides of the brackets now count, in the page and in price alerts. Products whose size option is not called "Size" (for example "Waist" or "Option") now get size buttons when the option's values look like sizes, and a lone Color option is no longer mistaken for sizes.
+
 - **BEARS TOKYO prices fixed.** The store's settings say its currency is yen, but its catalog and product pages price in US dollars (a Sugar Cane shirt is 142.03, i.e. $142.03). The app read that as ¥142 and converted it to about 95 cents. BEARS TOKYO is now set to USD in `sites.json` (it still ships from Japan, so shipping and duty are unchanged), and the app also guards against the same mistake at any other store: if a store says yen but its typical price is under 1,000, it is treated as dollars and the page shows the "currency not detected" note.
 
 - **inspect_product.py shows prices.** It now prints the store's currency, the catalog price the app uses and the price the page itself shows visitors, to find why a store's prices look wrong.

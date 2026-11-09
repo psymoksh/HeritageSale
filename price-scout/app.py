@@ -369,12 +369,21 @@ def _fetch_square(base, site):
     return products or None
 
 
+SIZEISH = re.compile(r"^(?:w?\d{2}(?:\s*[x/]\s*\d{2})?|\d{1,2}(?:\.\d)?|(?:[2-5]?x{0,3}[sl]|m|xs|small|medium|large|free|one size|os|f)|\d{1,2}\s*\(.+\))$", re.I)
+
+
 def variant_sizes(p):
     """[[size label, in_stock], ...] from the product's Size option."""
     names = [o.get("name", "") for o in p.get("options", [])]
     idx = next((i for i, n in enumerate(names) if "size" in n.lower() or "サイズ" in n), None)  # サイズ = size
-    if idx is None and len(names) == 1 and names[0].lower() != "title":
+    if idx is None and len(names) == 1 and names[0].lower() != "title" and not re.search(r"colou?r|カラー|色|style|material", names[0], re.I):
         idx = 0
+    if idx is None:   # no option is called Size: use the one whose values look like sizes (Option2, Title, "Waist" ...)
+        for i in range(len(names)):
+            vals = {v.get(f"option{i + 1}") for v in p.get("variants", [])} - {None, "", "Default Title"}
+            if vals and sum(bool(SIZEISH.match(str(v).strip())) for v in vals) >= 0.6 * len(vals):
+                idx = i
+                break
     if idx is None:
         return []
     seen = {}
@@ -1030,8 +1039,13 @@ def db():
 
 
 def size_match(label, want):
+    """'36(S)' matches a wanted 36 or S; '32 / 34' matches 32 or 34."""
     norm = lambda x: re.sub(r"^w(?=\d)", "", re.sub(r"\s+", "", x.lower()))
-    return norm(want) in [norm(p) for p in [label] + re.split(r"\s*[/,]\s*|\s+x\s+", label.lower())]
+    parts = [label] + re.split(r"\s*[/,]\s*|\s+x\s+", label.lower())
+    m = re.match(r"^(.*?)\s*\((.+)\)\s*$", label)
+    if m:
+        parts += [m.group(1), m.group(2)]
+    return norm(want) in [norm(p) for p in parts]
 
 
 def want_sizes(want):
@@ -1378,7 +1392,8 @@ const ls={get:k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}},se
 const money=(v,c)=>{try{return new Intl.NumberFormat('en-US',{style:'currency',currency:c}).format(v)}catch(e){return v.toFixed(2)+' '+c}};
 const usdOrBlank=v=>v==null?'n/a':money(v,'USD');
 const norm=s=>s.toLowerCase().replace(/\s+/g,'').replace(/^w(?=\d)/,'');
-const sizeMatch=(label,want)=>[label].concat(label.split(/\s*[\/,]\s*|\s+x\s+/i)).some(p=>norm(p)===norm(want));
+const sizeParts=l=>{const s=[l].concat(l.split(/\s*[\/,]\s*|\s+x\s+/i)),m=l.match(/^(.*?)\s*\((.+)\)\s*$/);if(m)s.push(m[1],m[2]);return s};   // "36(S)" -> 36 and S too
+const sizeMatch=(label,want)=>sizeParts(label).some(p=>norm(p)===norm(want));
 let SIZES=[];   // committed sizes (tags); whatever is still being typed counts too, so results filter as you type
 const parseSizes=t=>String(t||'').split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
 const wantList=()=>SIZES.concat(parseSizes(sizeIn.value).filter(x=>!SIZES.some(y=>norm(y)===norm(x))));
