@@ -87,6 +87,8 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 
 ## Change log
 
+- **Hinoya tops charts.** Hinoya's size chart (`Size  Shoulder  Chest  Back Length  Sleeve`, sizes S to 3L(XXL), values in cm) is read whether the page builds it as a table or as tab- or space-separated text. A chart size such as `3L(XXL)` now also matches a size button called `XXL` or `3L`.
+
 - **Why a store shows e.g. 5/10 measurements.** `check_stores.py -s "store" -c Tops` now lists, under the table, each sampled product with no readable measurements: whether it is in stock or sold out, its sizes and its URL. Also, a chart that says `S` / `M` / `L` now matches a size button called `36(S)` / `38(M)`.
 
 - **BEARS TOKYO tops charts.** BEARS writes tops charts as `Size/Chest/Shoulder/Length/Hem/Sleeve/` followed by rows like `36(S)/54cm/46cm/70cm/55cm/60cm`. The header ends with a slash and the sizes have brackets, and the reader had been giving up on both. It now reads these charts (centimetres converted to inches) and keeps the store's own size label, so `36(S)` lines up with the size button. Bottoms charts still read as before.

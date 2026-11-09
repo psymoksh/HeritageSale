@@ -488,6 +488,28 @@ def _slash_charts(lines, out):
                     out.setdefault(label, {}).setdefault(k, round(inches, 2))
 
 
+def _tab_charts(lines, out):
+    """A chart pasted as text: a header 'Size<TAB>Shoulder<TAB>Chest...' (tabs or 2+ spaces) then one line per size."""
+    cut = lambda s: [x.strip() for x in re.split(r"\t+|\s{2,}", s.strip())]
+    for i, line in enumerate(lines):
+        head = cut(line)
+        if len(head) < 3 or not head[0].lower().startswith("size"):
+            continue
+        keys = [measure_key(h) for h in head[1:]]
+        if sum(k is not None for k in keys) < 2:
+            continue
+        metric_head = bool(re.search(r"(?<![a-z])cm\b", line, re.I))
+        for row in lines[i + 1:i + 40]:
+            seg = cut(row)
+            if len(seg) != len(head) or not (SIZEISH.match(seg[0]) or re.match(r"^\d{1,2}[A-Za-z]*\s*\(.+\)$", seg[0])):
+                break
+            cm = metric_head or any(re.search(r"(?<![a-z])cm\b", c, re.I) for c in seg[1:])
+            for k, cell in zip(keys, seg[1:]):
+                v = parse_num(cell)
+                if k and v:
+                    out.setdefault(seg[0], {}).setdefault(k, round(v / 2.54 if cm else v, 2))
+
+
 BASE_SIZE = re.compile(r"measurements?\s+(?:are\s+)?based\s+on\s+(?:a\s+)?(?:size\s+)?(w?\d{2}|[2-5]xl|x{0,3}[sl]|m|small|medium|large)(?![a-z0-9])", re.I)
 
 
@@ -512,6 +534,7 @@ def parse_charts(html):
                 out.setdefault(m.group(1).strip(), {}).setdefault(k, v)
     lines = [l.strip() for l in soup.get_text("\n").splitlines() if l.strip()]
     _slash_charts(lines, out)
+    _tab_charts(lines, out)
     for line in lines:      # one garment size only: 'Front rise: 11 1/4", Knee: 18", Leg opening: 16", Measurements based on size 32'
         m = BASE_SIZE.search(line)
         if not m:
@@ -573,7 +596,8 @@ def measure_rows(p, extra=None):
             avail.setdefault(clean(m.group(1)), (l, a))        # chart says "S", variant is "36(S)"
     out = []
     for label, vals in {**(extra or {}), **parse_charts(p.get("body_html"))}.items():
-        hit = avail.get(clean(label)) or avail.get(bare(label))
+        inner = re.search(r"\((.+?)\)", label)
+        hit = avail.get(clean(label)) or avail.get(bare(label)) or (avail.get(clean(inner.group(1))) if inner else None)   # chart "3L(XXL)", variant "XXL"
         if hit:
             out.append({"size": hit[0], "in_stock": hit[1], **vals})
     return out
