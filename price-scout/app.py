@@ -460,6 +460,8 @@ def _slash_charts(lines, out):
     """BEARS TOKYO style: a header 'Size/waist/front rise/...' then one line per size '30inc/76cm/30cm/...'."""
     for i, line in enumerate(lines):
         head = [h.strip() for h in line.split("/")]
+        while head and not head[-1]:      # "Size/Chest/Shoulder/" ends with a slash
+            head.pop()
         if len(head) < 4 or not head[0].lower().startswith("size"):
             continue
         keys = [measure_key(h) for h in head[1:]]
@@ -467,13 +469,18 @@ def _slash_charts(lines, out):
             continue
         for row in lines[i + 1:i + 40]:
             seg = [x.strip() for x in row.split("/")]
+            while seg and not seg[-1]:
+                seg.pop()
             if len(seg) != len(head):
                 break
             size, _ = _slash_num(seg[0])
-            if size is None:
+            if size is None and not SIZEISH.match(seg[0]):
                 break
             cm_row = any("cm" in x.lower() for x in seg[1:])
-            label = str(int(size)) if size == int(size) else str(size)
+            if size is None or re.search(r"\(.+\)", seg[0]):
+                label = seg[0]             # "36(S)", "M": keep the store's own label
+            else:
+                label = str(int(size)) if size == int(size) else str(size)
             for k, cell in zip(keys, seg[1:]):
                 v, unit = _slash_num(cell)
                 if k and v:
