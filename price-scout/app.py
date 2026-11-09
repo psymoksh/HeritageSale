@@ -3,6 +3,7 @@ Run:  pip install -r requirements.txt && python app.py   ->  http://localhost:50
 """
 import gzip, hashlib, json, os, re, secrets, sqlite3, threading, time, urllib.robotparser
 from concurrent.futures import ThreadPoolExecutor
+from html import escape
 from urllib.parse import quote_plus, urljoin, urlparse
 
 import requests
@@ -803,10 +804,73 @@ def page_charts(url):
             r = requests.get(url, headers=HEADERS, timeout=12)
             r.raise_for_status()
             charts = parse_charts(r.text)
+            if not charts:
+                charts = esc_charts(url, r.text)
     except Exception:
         pass
     _pages[url] = (time.time(), charts)
     return charts
+
+
+# Stores whose size charts come from the "Size Charts & Size Guide - ESC" Shopify app (Withered Fig): the page
+# only holds an empty container, and the app draws the table in the browser from ONE script per store that lists
+# every chart (`cachedCharts`, each with a tag). We read that script once, then pick the chart whose tag is one of
+# the product's tags (the app's own rule).
+ESC_SCRIPT = re.compile(r"""(?:https?:)?//size-guides-prod\.esc-apps-cdn\.com/[^"'\s<>\\]+\.js[^"'\s<>\\]*""")
+_esc = {}  # script url -> (fetched_at, {tag: chart rows})
+
+
+def _cell(x):
+    return re.sub(r"\s+", " ", BeautifulSoup(str(x), "html.parser").get_text(" ")).strip()
+
+
+def esc_guides(script_url):
+    """{lowercase tag: rows} from an ESC size-guide script. Cached 6 hours (the file is several MB)."""
+    hit = _esc.get(script_url)
+    if hit and time.time() - hit[0] < 21600:
+        return hit[1]
+    guides = {}
+    try:
+        host = urlparse(script_url).netloc.lower()
+        if host == "size-guides-prod.esc-apps-cdn.com":
+            r = requests.get(script_url, headers=HEADERS, timeout=30)
+            r.raise_for_status()
+            m = re.search(r"cachedCharts\s*=\s*", r.text)
+            if m:
+                arr, _ = json.JSONDecoder().raw_decode(r.text, r.text.index("[", m.end()))
+                for ch in arr:
+                    rows = [[_cell(c) for c in row] for row in ch.get("data") or []]
+                    for t in (ch.get("tag") or "").split(","):
+                        if t.strip() and len(rows) > 1:
+                            guides.setdefault(t.strip().lower(), rows)
+    except Exception:
+        pass
+    _esc[script_url] = (time.time(), guides)
+    return guides
+
+
+def esc_charts(url, html):
+    """Chart for a product whose page loads the ESC size-guide app, parsed like any other table. {} if none."""
+    m = ESC_SCRIPT.search(html or "")
+    if not m:
+        return {}
+    script = m.group(0)
+    script = "https:" + script if script.startswith("//") else script
+    tags = re.search(r'data-tags="([^"]*)"', html)
+    tags = tags.group(1).split(",") if tags else []
+    if not tags:  # theme did not print them: use the product's own tags
+        try:
+            r = requests.get(url.split("?")[0].rstrip("/") + ".js", headers=HEADERS, timeout=12)
+            tags = (r.json().get("tags") or [])
+        except Exception:
+            tags = []
+    guides = esc_guides(script)
+    for t in tags:
+        rows = guides.get(t.strip().lower())
+        if rows:
+            table = "".join("<tr>" + "".join(f"<td>{escape(c)}</td>" for c in row) + "</tr>" for row in rows)
+            return parse_charts(f"<table>{table}</table>")
+    return {}
 
 
 MAX_PAGE_FETCHES = 10  # per store, per search; results are cached
