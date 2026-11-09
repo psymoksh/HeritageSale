@@ -806,6 +806,9 @@ def page_charts(url):
             charts = parse_charts(r.text)
             if not charts:
                 charts = esc_charts(url, r.text)
+                if not charts and "size-guides-prod" in r.text.replace("\\/", "/"):   # the app's script was there but unreadable: retry in 5 minutes, not 6 hours
+                    _pages[url] = (time.time() - 21600 + 300, charts)
+                    return charts
     except Exception:
         pass
     _pages[url] = (time.time(), charts)
@@ -824,29 +827,34 @@ def _cell(x):
     return re.sub(r"\s+", " ", BeautifulSoup(str(x), "html.parser").get_text(" ")).strip()
 
 
+_esc_lock = threading.Lock()   # the page asks for several products at once: download the script once, not five times
+
+
 def esc_guides(script_url):
-    """{lowercase tag: rows} from an ESC size-guide script. Cached 6 hours (the file is several MB)."""
-    hit = _esc.get(script_url)
-    if hit and time.time() - hit[0] < 21600:
-        return hit[1]
-    guides = {}
-    try:
-        host = urlparse(script_url).netloc.lower()
-        if host == "size-guides-prod.esc-apps-cdn.com":
-            r = requests.get(script_url, headers=HEADERS, timeout=30)
-            r.raise_for_status()
-            m = re.search(r"cachedCharts\s*=\s*", r.text)
-            if m:
-                arr, _ = json.JSONDecoder().raw_decode(r.text, r.text.index("[", m.end()))
-                for ch in arr:
-                    rows = [[_cell(c) for c in row] for row in ch.get("data") or []]
-                    for t in (ch.get("tag") or "").split(","):
-                        if t.strip() and len(rows) > 1:
-                            guides.setdefault(t.strip().lower(), rows)
-    except Exception:
-        pass
-    _esc[script_url] = (time.time(), guides)
-    return guides
+    """{lowercase tag: rows} from an ESC size-guide script. Cached 6 hours (the file is several MB);
+    a failed download is remembered for 5 minutes only, so one slow request cannot hide the charts all day."""
+    with _esc_lock:
+        hit = _esc.get(script_url)
+        if hit and time.time() - hit[0] < 21600:
+            return hit[1]
+        guides = {}
+        try:
+            host = urlparse(script_url).netloc.lower()
+            if host == "size-guides-prod.esc-apps-cdn.com":
+                r = requests.get(script_url, headers=HEADERS, timeout=60)
+                r.raise_for_status()
+                m = re.search(r"cachedCharts\s*=\s*", r.text)
+                if m:
+                    arr, _ = json.JSONDecoder().raw_decode(r.text, r.text.index("[", m.end()))
+                    for ch in arr:
+                        rows = [[_cell(c) for c in row] for row in ch.get("data") or []]
+                        for t in (ch.get("tag") or "").split(","):
+                            if t.strip() and len(rows) > 1:
+                                guides.setdefault(t.strip().lower(), rows)
+        except Exception as e:
+            print(f"[esc] could not read {script_url}: {e}", flush=True)
+        _esc[script_url] = (time.time() if guides else time.time() - 21600 + 300, guides)
+        return guides
 
 
 def esc_charts(url, html):
