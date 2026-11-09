@@ -130,6 +130,14 @@ def dump(url):
     print(f"tables in the raw HTML: {info['tables']}; iframes: {[i.get('src') for i in soup.find_all('iframe')][:5]}")
     print(f"measurement words in visible text (English or Japanese): {info['words']}")
     print(f"parser read {len(info['parsed'])} sizes: {dict(list(info['parsed'].items())[:3])}")
+    flat = html.replace("\\/", "/")
+    sm = app.ESC_SCRIPT.search(flat)
+    dt = re.search(r'data-tags="([^"]*)"', html)
+    print(f"ESC script address in the page: {sm.group(0) if sm else 'none'}; data-tags: {dt.group(1) if dt else 'none'}")
+    if sm:
+        g = app.esc_guides(("https:" + sm.group(0)) if sm.group(0).startswith("//") else sm.group(0))
+        tags = [t.strip().lower() for t in (dt.group(1).split(",") if dt else [])]
+        print(f"ESC script holds {len(g)} charts; this product's tags that have a chart: {[t for t in tags if t in g] or 'none'}")
     esc = app.esc_charts(url, html)
     print(f"ESC size-guide script reader: {len(esc)} sizes {dict(list(esc.items())[:2])}" if esc else
           "ESC size-guide script reader: nothing (no script address in the page, or no chart with this product's tags)")
