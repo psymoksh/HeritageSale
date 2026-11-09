@@ -601,6 +601,8 @@ def measure_rows(p, extra=None):
     for label, vals in {**(extra or {}), **parse_charts(p.get("body_html"))}.items():
         inner = re.search(r"\((.+?)\)", label)
         hit = avail.get(clean(label)) or avail.get(bare(label)) or (avail.get(clean(inner.group(1))) if inner else None)   # chart "3L(XXL)", variant "XXL"
+        if not hit and "|" in label:   # chart "1 | S", variant "S" or "1"
+            hit = next((avail[clean(x)] for x in re.split(r"\s*\|\s*", label) if clean(x) in avail), None)
         if hit:
             out.append({"size": hit[0], "in_stock": hit[1], **vals})
     return out
