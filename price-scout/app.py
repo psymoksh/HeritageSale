@@ -568,6 +568,9 @@ def measure_rows(p, extra=None):
     for l, a in variant_sizes(p):
         avail.setdefault(clean(l), (l, a))
         avail.setdefault(bare(l), (l, a))
+        m = re.search(r"\((.+?)\)", l)
+        if m:
+            avail.setdefault(clean(m.group(1)), (l, a))        # chart says "S", variant is "36(S)"
     out = []
     for label, vals in {**(extra or {}), **parse_charts(p.get("body_html"))}.items():
         hit = avail.get(clean(label)) or avail.get(bare(label))

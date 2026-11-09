@@ -54,6 +54,8 @@ def check(site, query, category="Bottoms"):
         row["sampled"] = len(sample)
         row["with_measures"] = sum(bool(o["measures"]) for o in sample)
         row["measure_category"] = category
+        row["no_measures"] = [f'{o["title"][:60]} | {"in stock" if any(s[1] for s in o["sizes"]) else "sold out"} | sizes: {", ".join(s[0] for s in o["sizes"][:6]) or "none"} | {o["url"]}'
+                              for o in sample if not o["measures"]]
     row["samples"] = [f'{o["title"]} | {o["price"]} {o["currency"]} | {o["category"]}' for o in offers[:3]]
     return row
 
@@ -76,6 +78,10 @@ def main():
                   f'{r["with_sizes"]:>6} {r["with_images"]:>5} {meas:>7}  {r["method"]}')
         else:
             print(f'{r["store"][:24]:24} NO  {"":>8} {"":5} {"":14} {"":>6} {"":>5} {"":>7}  {r.get("error", "")[:70]}')
+    if a.store:      # one store: say which sampled products had no readable measurements, so we can see why
+        for r in rows:
+            for line in r.get("no_measures", []):
+                print("  no measurements:", line)
     good = sum(r["ok"] for r in rows)
     print(f"\n{good}/{len(rows)} stores returned listings. Detail: store_report.json")
     json.dump(rows, open("store_report.json", "w"), indent=2, ensure_ascii=False)

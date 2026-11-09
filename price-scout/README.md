@@ -87,6 +87,8 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 
 ## Change log
 
+- **Why a store shows e.g. 5/10 measurements.** `check_stores.py -s "store" -c Tops` now lists, under the table, each sampled product with no readable measurements: whether it is in stock or sold out, its sizes and its URL. Also, a chart that says `S` / `M` / `L` now matches a size button called `36(S)` / `38(M)`.
+
 - **BEARS TOKYO tops charts.** BEARS writes tops charts as `Size/Chest/Shoulder/Length/Hem/Sleeve/` followed by rows like `36(S)/54cm/46cm/70cm/55cm/60cm`. The header ends with a slash and the sizes have brackets, and the reader had been giving up on both. It now reads these charts (centimetres converted to inches) and keeps the store's own size label, so `36(S)` lines up with the size button. Bottoms charts still read as before.
 
 - **Sizes like "36(S)" now match "S" or "36", and more size options are found.** Stores such as BEARS TOKYO label sizes `36(S)`; typing S or 36 in "My sizes" used to hide those products. Both sides of the brackets now count, in the page and in price alerts. Products whose size option is not called "Size" (for example "Waist" or "Option") now get size buttons when the option's values look like sizes, and a lone Color option is no longer mistaken for sizes.
