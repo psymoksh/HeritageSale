@@ -1,0 +1,5 @@
+# What the app needs directly. To upgrade: pip install -U -r requirements.in, test, then regenerate requirements.txt (README section 6).
+flask>=3.0
+requests>=2.31
+beautifulsoup4>=4.12
+flask-limiter>=3.5

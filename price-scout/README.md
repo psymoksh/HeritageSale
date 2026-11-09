@@ -55,12 +55,21 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 
 ## 6. Put it on the internet safely
 
-1. Install the new package first: `pip install -r requirements.txt` (adds `flask-limiter`).
-2. Run it with a production server, not `python app.py`: for example `gunicorn -w 1 app:app` behind HTTPS. Use one worker, because the alert timer and the visitor counters live in the app process; for several workers set `LIMITER_STORAGE=redis://...`.
+1. Install the pinned packages: `pip install -r requirements.txt` (exact versions, so nothing changes under you). To upgrade later: `pip install -U -r requirements.in`, run the checks in section 7, then regenerate the pins (`pip freeze` for the packages listed there and their dependencies) into `requirements.txt`. Check them for known problems with `pip install pip-audit && pip-audit -r requirements.txt`.
+2. Run it with a production server, not `python app.py`: for example `BACKGROUND=1 gunicorn -w 1 app:app` behind HTTPS. Use one worker, because the alert timer, the store warm-up and the visitor counters live in the app process; for several workers set `LIMITER_STORAGE=redis://...`. `BACKGROUND=1` starts the warm-up and the alert checker (`python app.py` does this by itself).
 3. If a host or proxy sits in front of the app (Render, Fly, nginx), set `TRUST_PROXY=1`. Without it every visitor looks like the same address and shares one limit.
-4. Starting limits per visitor: search 20 per minute, create alert 10 per hour, "Check now" 5 per hour, everything 300 per hour, 20 alerts per browser. Change any of them without editing code: `LIMIT_SEARCH`, `LIMIT_ALERT_CREATE`, `LIMIT_ALERT_CHECK`, `LIMIT_DEFAULT` (for example `LIMIT_SEARCH="30 per minute"`) and `MAX_ALERTS_PER_OWNER`.
+4. Starting limits per visitor: search 20 per minute, create alert 10 per hour, "Check now" 5 per hour, size-chart loading 600 per hour, everything else 300 per hour, 20 alerts per browser. Change any of them without editing code: `LIMIT_SEARCH`, `LIMIT_ALERT_CREATE`, `LIMIT_ALERT_CHECK`, `LIMIT_FIT`, `LIMIT_DEFAULT` (for example `LIMIT_SEARCH="30 per minute"`) and `MAX_ALERTS_PER_OWNER`.
 5. After a week of real traffic, look for "429" lines in your host's logs. Many from real people means loosen that limit; none at all and heavy load means tighten it.
 6. Alerts belong to the browser that created them (a private cookie). Clearing cookies or switching browsers means you no longer see them. Alerts made before this change have no owner and are not shown (they stay in `alerts.db`).
+7. Privacy page: the site serves `/privacy` and links it in the footer. Set `CONTACT_EMAIL=you@example.com` so it shows a contact line, and read the text once to be sure it matches what you do. It is a plain-language description, not legal advice.
+8. Security headers are sent automatically (content security policy, no framing, no content sniffing, HTTPS-only when served over HTTPS). Check the live site at securityheaders.com after you deploy. If you add a script, a font or an image source from another website, the policy blocks it until you allow it in `csp()` in `app.py`.
+
+## 6b. Speed: warm cache and lazy size charts
+
+1. When the app starts it reads the saved store catalogs from the `cache/` folder (so a restart is instant), then refreshes every store in the background every 30 minutes (`WARM_EVERY_MIN`). A search normally never waits on the stores. The very first run on a new machine still has to download everything once.
+2. If a store is down, the last good copy keeps being used (for up to 24 hours) and the app retries every 5 minutes.
+3. Size charts that live on product pages are no longer fetched while you wait. The list appears first with a note "reading N more size charts…", and fit filters and size panels fill in within a few seconds. Price alerts still wait for full data.
+4. To clear the cache, stop the app and delete the `cache/` folder. `CACHE_DIR` moves it elsewhere (set it to a persistent disk on a host that wipes files on restart).
 
 ## 7. Check your changes before committing
 
@@ -70,6 +79,8 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 4. Add a line to the change log below.
 
 ## Change log
+
+- **Faster first search, and launch hardening.** *Speed:* store catalogs are now refreshed in the background every 30 minutes and saved to a `cache/` folder, so a search no longer waits on 25 stores and a restart is instant; an hour-old catalog is shown at once while a fresh one loads, and a failing store keeps its last good copy. Converting 8,000 products per store happens once per catalog instead of once per search. Size charts that live on product pages load after the results appear (`POST /api/fit`, ten at a time) instead of holding up the search; the page shows "reading N more size charts…". *Security:* every response now carries a content security policy (scripts and styles only with a per-page random nonce), no-framing, no-sniffing, referrer and permissions headers, HSTS over HTTPS, and no caching of API replies; the one inline event handler was removed. Listing links and images must be http(s): the server drops anything else and the page double-checks. The size-chart loader only fetches pages on our own stores' hosts. Dependencies are pinned to exact versions in `requirements.txt` (`requirements.in` lists the direct ones). A privacy page at `/privacy` is linked in the footer. See sections 6 and 6b for the settings.
 
 - **Several sizes at once.** "My sizes" now takes more than one size: type a size and press Enter (or comma, or pick from the list) and it becomes a tag; click a tag's × or press Backspace in the empty box to remove it. A product shows if any chosen size is in stock, its size buttons show only your sizes, and what you are still typing filters live. The chosen sizes are remembered in this browser, and a price alert saves all of them (any one in stock triggers it). The prototype matches.
 

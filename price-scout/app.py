@@ -1,7 +1,7 @@
 """Price Scout: type a product, and it searches your list of stores for the best prices.
 Run:  pip install -r requirements.txt && python app.py   ->  http://localhost:5000
 """
-import json, os, re, secrets, sqlite3, threading, time, urllib.robotparser
+import gzip, hashlib, json, os, re, secrets, sqlite3, threading, time, urllib.robotparser
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote_plus, urljoin, urlparse
 
@@ -46,6 +46,31 @@ def owner_id():
     return g.new_owner
 
 
+def csp(nonce=None):
+    if not nonce:   # JSON and error responses carry no page
+        return "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+    return ("default-src 'none'; "
+            f"script-src 'nonce-{nonce}'; "
+            f"style-src 'nonce-{nonce}' https://fonts.googleapis.com; style-src-attr 'unsafe-inline'; "
+            "font-src https://fonts.gstatic.com; img-src 'self' data: https: http:; connect-src 'self'; "
+            "base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'")
+
+
+@app.after_request
+def security_headers(resp):
+    resp.headers["Content-Security-Policy"] = csp(g.get("nonce"))
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    resp.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    if request.is_secure:
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000"
+    if request.path.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.after_request
 def set_owner_cookie(resp):
     t = g.get("new_owner")
@@ -61,6 +86,16 @@ _robots = {}
 def load_sites():
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sites.json")) as f:   # works from any directory
         return json.load(f)
+
+
+def safe_http(u):
+    """Only http(s) links with a host may reach the page: a store page (or a bad scrape) must never hand the browser
+    a javascript: or data: address."""
+    try:
+        p = urlparse(u or "")
+    except ValueError:
+        return None
+    return u if p.scheme in ("http", "https") and p.netloc else None
 
 
 def parse_price(text):
@@ -187,17 +222,89 @@ def matches(title, query):
     return len(sq) >= 5 and sq in t.replace(" ", "")
 
 
-_catalog = {}  # base_url -> (fetched_at, products or None)
+_catalog = {}  # cache key -> (fetched_at, products or None)
+CATALOG_TTL = 3600           # a catalog younger than this is used as is
+CATALOG_STALE_OK = 86400     # an older one is still served at once while a fresh copy loads in the background
+CACHE_DIR = os.environ.get("CACHE_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache"))
+_locks, _locks_guard = {}, threading.Lock()
+
+
+def _lock_for(key):
+    with _locks_guard:
+        return _locks.setdefault(key, threading.Lock())
+
+
+def _disk_path(key):
+    return os.path.join(CACHE_DIR, hashlib.sha1(key.encode()).hexdigest()[:20] + ".json.gz")
+
+
+def _disk_save(key, ts, products):
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        tmp = _disk_path(key) + ".tmp"
+        with gzip.open(tmp, "wt", encoding="utf-8") as f:
+            json.dump({"key": key, "ts": ts, "products": products}, f)
+        os.replace(tmp, _disk_path(key))
+    except Exception:
+        pass   # the disk cache is only a speed-up
+
+
+def load_disk_cache():
+    """Read catalogs saved by an earlier run, so the first search after a restart does not wait on 25 stores."""
+    n = 0
+    try:
+        for fn in os.listdir(CACHE_DIR):
+            if not fn.endswith(".json.gz"):
+                continue
+            try:
+                with gzip.open(os.path.join(CACHE_DIR, fn), "rt", encoding="utf-8") as f:
+                    d = json.load(f)
+                if d["products"] and time.time() - d["ts"] < CATALOG_STALE_OK and d["key"] not in _catalog:
+                    _catalog[d["key"]] = (d["ts"], d["products"])
+                    n += 1
+            except Exception:
+                continue
+    except FileNotFoundError:
+        pass
+    return n
+
+
+def _refresh_catalog(key, fetch):
+    with _lock_for(key):                       # one fetch per store at a time, even if a search and the warm-up collide
+        old = _catalog.get(key)
+        if old and time.time() - old[0] < 60:  # someone just refreshed it
+            return old[1]
+        products = fetch() or None
+        now = time.time()
+        if products is None and old and old[1]:
+            _catalog[key] = (now - CATALOG_TTL + 300, old[1])   # keep the last good copy, try again in 5 minutes
+            return old[1]
+        _catalog[key] = (now, products)
+        if products:
+            _disk_save(key, now, products)
+        return products
+
+
+def cached_catalog(key, fetch, max_age=CATALOG_TTL):
+    hit = _catalog.get(key)
+    age = time.time() - hit[0] if hit else None
+    if hit and age < max_age:
+        return hit[1]
+    if hit and hit[1] and age < CATALOG_STALE_OK:      # stale: answer now, refresh behind the scenes
+        threading.Thread(target=_refresh_catalog, args=(key, fetch), daemon=True).start()
+        return hit[1]
+    return _refresh_catalog(key, fetch)
 
 
 CATALOG_CAP = int(os.environ.get("CATALOG_CAP", 8000))   # max products read per store (250 per request)
 
 
-def get_catalog(base):
-    """Shopify stores publish their catalog at /products.json. Cached for an hour; None if the store has none."""
-    hit = _catalog.get(base)
-    if hit and time.time() - hit[0] < 3600:
-        return hit[1]
+def get_catalog(base, max_age=CATALOG_TTL):
+    """Shopify stores publish their catalog at /products.json. Cached for an hour (and on disk); None if the store has none."""
+    return cached_catalog(base, lambda: _fetch_catalog(base), max_age)
+
+
+def _fetch_catalog(base):
     products = None
     try:
         if allowed(f"{base}/products.json"):
@@ -213,18 +320,16 @@ def get_catalog(base):
                 page += 1
     except Exception:
         products = None
-    products = products or None
-    _catalog[base] = (time.time(), products)
-    return products
+    return products or None
 
 
-def get_square_catalog(base, site):
+def get_square_catalog(base, site, max_age=CATALOG_TTL):
     """Square Online stores (no /products.json) serve their storefront catalog as JSON. Needs `square_owner_id` and
     `square_site_id` in sites.json. Products are reshaped like Shopify's so from_shopify / measure_rows work unchanged."""
-    key = base + "#square"
-    hit = _catalog.get(key)
-    if hit and time.time() - hit[0] < 3600:
-        return hit[1]
+    return cached_catalog(base + "#square", lambda: _fetch_square(base, site), max_age)
+
+
+def _fetch_square(base, site):
     url = f'{base}/app/store/api/v28/editor/users/{site["square_owner_id"]}/sites/{site["square_site_id"]}/products'
     products = None
     try:
@@ -261,9 +366,7 @@ def get_square_catalog(base, site):
                 page += 1
     except Exception:
         products = None
-    products = products or None
-    _catalog[key] = (time.time(), products)
-    return products
+    return products or None
 
 
 def variant_sizes(p):
@@ -494,6 +597,23 @@ def categorize(product_type="", title="", tags=()):
     return "Other"
 
 
+def product_url(base, p):
+    return p.get("url") or f'{base}/products/{p["handle"]}'
+
+
+_shop_found = {}   # base -> (products list it was built from, converted listings)
+
+
+def shopify_found(base, products):
+    """from_shopify for up to 8,000 products per store costs real time; do it once per catalog, not once per search."""
+    hit = _shop_found.get(base)
+    if hit and hit[0] is products:
+        return hit[1]
+    found = from_shopify(base, products)
+    _shop_found[base] = (products, found)
+    return found
+
+
 def from_shopify(base, products):
     out = []
     for p in products:
@@ -511,7 +631,7 @@ def from_shopify(base, products):
         tags = p.get("tags") or []
         tags = tags.split(",") if isinstance(tags, str) else tags
         img = (p.get("images") or [{}])[0].get("src")
-        out.append((title, price, p.get("url") or f'{base}/products/{p["handle"]}', {
+        out.append((title, price, product_url(base, p), {
             "match": f'{title} {p.get("product_type", "")} {" ".join(tags)}',
             "sizes": variant_sizes(p),
             "category": categorize(p.get("product_type", ""), p["title"], tags),
@@ -621,6 +741,12 @@ def usd_rates():
 _pages = {}  # product url -> (fetched_at, charts parsed from the page)
 
 
+def cached_charts(url):
+    """Charts already read from this product page (None if we have not fetched it yet)."""
+    hit = _pages.get(url)
+    return hit[1] if hit and time.time() - hit[0] < 21600 else None
+
+
 def page_charts(url):
     """Size charts that live on the product page itself (not in the catalog description). Cached 6 hours."""
     hit = _pages.get(url)
@@ -647,7 +773,7 @@ def search_site(site, query, category=None):
         products = (None if site.get("type") == "html" else
                     get_square_catalog(base, site) if site.get("type") == "square" else get_catalog(base))
         if products:
-            found, url = from_shopify(base, products), base
+            found, url = shopify_found(base, products), base
         elif not query:  # browsing a category needs a store catalog; search pages can't list everything
             return name, [], "no matching results"
         else:  # not a Shopify store (or catalog hidden): scrape its search page
@@ -665,6 +791,9 @@ def search_site(site, query, category=None):
         offers = []
         for t, p, u, *rest in found:
             x = rest[0] if rest else {}
+            u = safe_http(u)
+            if not u:
+                continue
             if not matches(x.get("match") or t, query):
                 continue
             cat = x.get("category") or categorize("", t)
@@ -672,15 +801,17 @@ def search_site(site, query, category=None):
                 continue
             offers.append({"site": name, "title": t, "price": p, "url": u, "currency": cur,
                            "assumed": assumed, "sizes": x.get("sizes", []), "category": cat,
-                           "was": x.get("was"), "image": x.get("image"), "measures": [],
+                           "was": x.get("was"), "image": safe_http(x.get("image")), "measures": [],
                            "ships_from": ships_from, "codes": x.get("codes", []), "_fill": x.get("measures")})
         return name, offers, None if offers else "no matching results"
     except Exception as e:
         return name, [], str(e)[:120]
 
 
-def fill_measures(offers):
-    """Read size charts for the listings we are about to return, then drop the private helper."""
+def fill_measures(offers, lazy=False):
+    """Read size charts for the listings we are about to return, then drop the private helper.
+    lazy=True (the website): never wait on product pages. Charts already cached are used; the others are flagged
+    `fit_pending` and the page asks /api/fit for them after the results are on screen."""
     pending = []
     for o in offers:
         fn = o.pop("_fill", None)
@@ -699,6 +830,14 @@ def fill_measures(offers):
         charts = page_charts(o["url"])
         if charts:
             o["measures"] = fn(charts)
+    if lazy:
+        for o, fn in jobs:
+            charts = cached_charts(o["url"])
+            if charts is None:
+                o["fit_pending"] = True
+            elif charts:
+                o["measures"] = fn(charts)
+        return
     with ThreadPoolExecutor(8) as ex:
         list(ex.map(grab, jobs))
 
@@ -739,7 +878,7 @@ def assign_groups(offers):
         o["gid"] = ids.setdefault(find(o.pop("_k")), f"g{len(ids)}")
 
 
-def run_search(q, category=None):
+def run_search(q, category=None, lazy=False):
     """(offers sorted cheapest first, notes, info). With no search text, a category is browsed instead."""
     sites = load_sites()
     with ThreadPoolExecutor(12) as ex:
@@ -764,7 +903,7 @@ def run_search(q, category=None):
     info = {"browse": browse, "category": category, "total_matches": len(offers), "truncated": len(offers) > cap}
     offers = offers[:cap]
     assign_groups(offers)
-    fill_measures(offers)
+    fill_measures(offers, lazy)
     notes = [f"{n}: {e}" for n, _, e in res if e and not (browse and e == "no matching results")]
     return offers, notes, info
 
@@ -777,8 +916,87 @@ def api_search():
     cat = cat if cat in CATEGORIES else None
     if not q and not cat:
         return jsonify({"offers": [], "notes": [], "browse": False, "category": None, "total_matches": 0, "truncated": False})
-    offers, notes, info = run_search(q, cat)
+    offers, notes, info = run_search(q, cat, lazy=True)
     return jsonify({"offers": offers, "notes": notes, **info})
+
+
+LIMIT_FIT = os.environ.get("LIMIT_FIT", "600 per hour")   # the page asks in small batches after a search
+MAX_FIT_BATCH = 10
+
+
+def _store_for(url, sites):
+    p = urlparse(url)
+    if p.scheme not in ("http", "https"):
+        return None
+    for st in sites:
+        if st.get("type") != "html" and urlparse(st["base_url"]).netloc.lower() == p.netloc.lower():
+            return st
+    return None   # only our own stores' product pages are ever fetched
+
+
+def _fit_for(site, url):
+    base = site["base_url"].rstrip("/")
+    products = get_square_catalog(base, site) if site.get("type") == "square" else get_catalog(base)
+    prod = next((p for p in products or [] if product_url(base, p) == url), None)
+    if prod is None:
+        return None
+    charts = page_charts(url)
+    return measure_rows(prod, charts) if charts else []
+
+
+@app.post("/api/fit")
+@limiter.limit(LIMIT_FIT)
+def api_fit():
+    """Size charts that live on product pages, read after the results are shown (see fill_measures lazy)."""
+    urls = (request.get_json(silent=True) or {}).get("urls")
+    urls = [u for u in urls if isinstance(u, str)][:MAX_FIT_BATCH] if isinstance(urls, list) else []
+    sites = load_sites()
+    work = [(u, _store_for(u, sites)) for u in urls]
+    with ThreadPoolExecutor(5) as ex:
+        res = list(ex.map(lambda w: (w[0], _fit_for(w[1], w[0]) if w[1] else None), work))
+    return jsonify({"fit": {u: m for u, m in res if m is not None}})
+
+
+# ---------------- Warm-up: keep every store's catalog fresh so a search never waits on 25 stores ----------------
+WARM_EVERY = int(os.environ.get("WARM_EVERY_MIN", 30)) * 60
+_started = False
+
+
+def prewarm_once():
+    sites = load_sites()
+    usd_rates()
+
+    def warm(site):
+        base = site["base_url"].rstrip("/")
+        try:
+            if site.get("type") == "html":
+                return
+            if site.get("type") == "square":
+                get_square_catalog(base, site, max_age=WARM_EVERY)
+            else:
+                get_catalog(base, max_age=WARM_EVERY)
+                shop_meta(base)
+        except Exception:
+            pass
+    with ThreadPoolExecutor(6) as ex:
+        list(ex.map(warm, sites))
+
+
+def prewarm_loop():
+    while True:
+        prewarm_once()
+        time.sleep(WARM_EVERY)
+
+
+def start_background():
+    """Disk cache -> instant first search; warm-up loop keeps catalogs fresh; alert checker. Safe to call twice."""
+    global _started
+    if _started:
+        return
+    _started = True
+    load_disk_cache()
+    threading.Thread(target=prewarm_loop, daemon=True).start()
+    threading.Thread(target=alert_loop, daemon=True).start()
 
 
 # ---------------- Price alerts (SQLite; checked hourly while the app runs) ----------------
@@ -945,13 +1163,39 @@ def alerts_check_now():
 
 @app.get("/")
 def index():
-    return render_template_string(PAGE, sites=[s["name"] for s in load_sites()])
+    g.nonce = secrets.token_urlsafe(16)   # one per response; the CSP allows only scripts and styles carrying it
+    return render_template_string(PAGE, sites=[s["name"] for s in load_sites()], nonce=g.nonce)
+
+
+@app.get("/privacy")
+def privacy():
+    g.nonce = secrets.token_urlsafe(16)
+    return render_template_string(PRIVACY, nonce=g.nonce, contact=os.environ.get("CONTACT_EMAIL", ""))
+
+
+PRIVACY = r"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Privacy · Price Scout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@300..800&display=swap" rel="stylesheet">
+<style nonce="{{ nonce }}">
+:root{--ground:#f5f4ee;--ink:#000;--field:#00f;--yellow:#ff0;color-scheme:light}
+*{box-sizing:border-box}body{margin:0;background:var(--ground);color:var(--ink);font:450 17px/1.55 "Host Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;margin:0 auto;padding:28px 18px 60px}h1{font-size:30px;font-weight:800;margin:0 0 6px;border-left:14px solid var(--yellow);padding-left:12px}
+h2{font-size:18px;font-weight:800;margin:26px 0 4px}p,li{margin:6px 0}a{color:var(--field);font-weight:650}.mut{font-size:14px}
+</style>
+<main><h1>Privacy</h1><p class="mut">Price Scout compares prices at heritage and Japanese denim stores. It has no accounts and no ads, and it does not sell data.</p>
+<h2>What you type</h2><p>Your search words are sent to this site, which looks them up at the stores’ public pages. They are not saved, except inside a price alert you choose to create.</p>
+<h2>Price alerts</h2><p>An alert saves your search words, category, sizes, fit ranges and price limit, and is tied to a random code in a cookie (<code>ps_owner</code>), not to a name or an email address. Alerts are checked hourly. You can delete an alert at any time from “Your price alerts”. Clearing your cookies means you can no longer see or delete alerts made earlier in that browser.</p>
+<h2>What stays in your browser</h2><p>Your chosen sizes are kept in this browser (local storage, <code>ps_sizes</code>) so they are there next time. The <code>ps_owner</code> cookie lasts a year, is not readable by page scripts, and is used only for alerts. There are no advertising or analytics cookies.</p>
+<h2>Your address</h2><p>Your IP address is used to limit how many searches one visitor can make a minute and an hour. That count is held in the server’s memory and is not stored with your searches. The web host may keep ordinary access logs.</p>
+<h2>Other companies</h2><ul><li>The page loads its font from Google Fonts, so Google sees your IP address when you open it.</li><li>Product pictures load straight from each store’s website, and the links open the store’s own site, which has its own privacy policy.</li><li>Exchange rates are fetched by the server, not by your browser.</li></ul>
+<h2>Prices</h2><p>Totals include estimated shipping and import duty and are only estimates. Check the store before you buy.</p>
+{% if contact %}<h2>Contact</h2><p>Questions or a deletion request: <a href="mailto:{{ contact }}">{{ contact }}</a></p>{% endif %}
+<p><a href="/">← Back to Price Scout</a></p></main></html>"""
 
 
 PAGE = r"""<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Price Scout</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@300..800&display=swap" rel="stylesheet">
-<style>
+<style nonce="{{ nonce }}">
 :root{--dp-color-ground:#f5f4ee;--dp-color-ink:#000000;--dp-color-accent:#ff0000;--dp-color-field:#0000ff;--dp-color-field-support:#ffff00;--dp-color-quiet:#e8e8e8;--dp-color-on-field:#ffffff;
 --dp-typography-face:"Bauhaus Host","Host Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;--dp-typography-body:18px;--dp-typography-reading:17px;--dp-typography-label:15px;--dp-typography-caption:14px;
 --dp-typography-weight-display:800;--dp-typography-weight-action:750;--dp-typography-weight-label:650;--dp-typography-weight-reading:450;--dp-typography-reading-leading:1.5;
@@ -1085,6 +1329,7 @@ button.oth{padding:4px 10px;font-size:14px;border-width:3px;box-shadow:none}
 button.oth[aria-pressed=true]{background:var(--dp-color-ink);color:var(--dp-color-on-field)}
 button.oth:active:not(:disabled){transform:none}
 .pn .ghost{margin-top:10px}
+.foot{padding:18px var(--dp-spacing-gutter) 40px;font-size:var(--dp-typography-caption)}.foot a{color:var(--dp-color-field);font-weight:var(--dp-typography-weight-label)}
 @media (max-width:720px){body.sheet-open{padding-bottom:62vh}
 tr.panel{display:block}tr.panel>td{display:block;border:0}
 .pn{position:fixed;left:0;right:0;bottom:0;max-height:78vh;overflow:auto;z-index:50;background:var(--dp-color-ground);border-top:var(--dp-border-rule) solid var(--dp-color-ink);box-shadow:0 -10px 0 rgba(0,0,0,.18);padding:14px 16px calc(18px + env(safe-area-inset-bottom,0px))}
@@ -1114,8 +1359,11 @@ tr.item{scroll-margin-top:150px}
 <details id="alerts" hidden><summary>Your price alerts</summary><div class="card"><div id="alist"></div>
 <p class="mut">Checked every hour while this app is running. <button class="ghost" id="chk">Check now</button></p></div></details>
 </main>
-<script>
+<footer class="foot"><a href="/privacy">Privacy</a> · Prices are estimates; check each store before you buy.</footer>
+<script nonce="{{ nonce }}">
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const safeUrl=u=>/^https?:\/\//i.test(u||'')?u:'#';   // never put a javascript: or data: address in a link
+document.addEventListener('error',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.classList.contains('thumb'))t.style.opacity=.2},true);
 const $=id=>document.getElementById(id);
 const q=$('q'),go=$('go'),out=$('out'),sortSel=$('sort'),stockBox=$('stock'),saleBox=$('sale'),sizeIn=$('size'),amax=$('amax');
 let DATA=null,LASTQ='';const OPEN=new Set();
@@ -1165,9 +1413,11 @@ function panel(l){
   const o=l.find(x=>x._i===SEL.i),size=SEL.size,fo=fitActive()?fitObj():{};
   const sz=o.sizes.find(s=>sameSize(s[0],size)),m=measureFor(o,size);
   const stock=sz?(sz[1]?'In stock':'Sold out'):'Not listed at this store';
-  const link=`<a href="${esc(o.url)}" target="_blank" rel="noopener">Open the store’s page ↗</a>`;
+  const link=`<a href="${esc(safeUrl(o.url))}" target="_blank" rel="noopener noreferrer">Open the store’s page ↗</a>`;
   let inner;
-  if(!o.measures.length){
+  if(!o.measures.length&&o.fit_pending){
+    inner=`<div class="nodata"><b>Reading this store’s size chart…</b><div class="mut">It loads from the product page and appears here in a moment. ${link}</div></div>`;
+  }else if(!o.measures.length){
     inner=`<div class="nodata"><b>No measurements we can read for this store.</b><div class="mut">Its size chart may be an image or a pop-up on the product page, so fit filters can’t be checked here. ${link}</div></div>`;
   }else{
     const cells=m?keysFor(o).filter(([k])=>m[k]!=null).map(([k,lab])=>{
@@ -1224,9 +1474,9 @@ function render(){
     const local=money(o.price,o.currency)+(o.currency==='USD'?'':' '+o.currency)+(o.assumed?'*':'');
     const was=o.was?`<div class="mut"><s>${esc(money(o.was,o.currency))}</s> <span class="sale">−${Math.round((1-o.price/o.was)*100)}%</span></div>`:'';
     const rs=rangesFor(o),fits=rs.length?fitSizes(o,want,rs):null;
-    const img=o.image?`<img class="thumb" src="${esc(o.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.opacity=.2">`:'<div class="thumb"></div>';
+    const img=o.image?`<img class="thumb" src="${esc(safeUrl(o.image))}" alt="" loading="lazy" referrerpolicy="no-referrer">`:'<div class="thumb"></div>';
     return `<tr class="item ${first?'best':''}${sub?' sub':''}"><td>${img}</td>
-      <td><a href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.title)}</a>${first?`<span class="tag">${lowTag}</span>`:''}<div class="mut">${esc(o.site)}</div>${chips(o,want,fits)}</td>
+      <td><a href="${esc(safeUrl(o.url))}" target="_blank" rel="noopener noreferrer">${esc(o.title)}</a>${first?`<span class="tag">${lowTag}</span>`:''}<div class="mut">${esc(o.site)}</div>${chips(o,want,fits)}</td>
       <td class="tot" data-l="Est. total">${usdOrBlank(o.total)}</td><td data-l="Item (USD)">${esc(item)}${was}</td><td data-l="Shipping">${usdOrBlank(o.ship)}</td><td data-l="Duty">${usdOrBlank(o.duty)}</td><td data-l="Ships from">${esc(o.ships_from_name||o.ships_from||'Unknown')}</td><td data-l="Local price">${esc(local)}</td></tr>`};
   const byGid=new Map();
   offers.forEach((o,i)=>{const g=o.gid||('x'+i);if(!byGid.has(g))byGid.set(g,[]);byGid.get(g).push(o)});   // offers are already sorted, so l[0] is the cheapest in-stock store for the current filters
@@ -1247,12 +1497,12 @@ function render(){
   }).join('');
   const th=(k,label)=>`<th aria-sort="${key===k?'ascending':'none'}"><button type="button" class="sortbtn" data-sort="${k}" title="Sort cheapest first by ${esc(label)}">${label}${key===k?' ▲':''}</button></th>`;
   const assumed=DATA.offers.some(o=>o.assumed),scope=DATA.offers.filter(inCat);
-  const noData=scope.filter(o=>ranges.length?!o.measures.length:!o.sizes.length).length;
+  const noData=scope.filter(o=>ranges.length?!o.measures.length&&!o.fit_pending:!o.sizes.length).length;
   const shown=DATA.browse
     ?`${nProd} ${esc(DATA.category)} ${nProd===1?'product':'products'}, cheapest first${DATA.truncated?` (the ${DATA.offers.length} cheapest of ${DATA.total_matches.toLocaleString()}; type a product name to search them all)`:''}`
     :`${nProd} ${nProd===1?'product':'products'}, cheapest first${DATA.truncated?` (the ${DATA.offers.length} cheapest of ${DATA.total_matches.toLocaleString()})`:''}`;
   out.innerHTML=`<div class="card">`+(offers.length
-    ?`<p class="mut">${shown}${want.length?' · size '+esc(want.join(' or '))+' in stock':''}${ranges.length?' · matching your fit measurements':''}${noData&&(want.length||ranges.length)?' · '+noData+' hidden: no '+(ranges.length?'measurement':'size')+' data':''}</p>
+    ?`<p class="mut">${shown}${want.length?' · size '+esc(want.join(' or '))+' in stock':''}${ranges.length?' · matching your fit measurements':''}${DATA.fitLeft>0?' · reading '+DATA.fitLeft+' more size charts…':''}${noData&&(want.length||ranges.length)?' · '+noData+' hidden: no '+(ranges.length?'measurement':'size')+' data':''}</p>
     <table><tr class="hd"><th></th><th>Product</th>${th('total','Est. total')}${th('usd','Item (USD)')}<th>Shipping</th><th>Duty</th><th>Ships from</th><th>Local price</th></tr>${body}</table>
     <p class="mut">Est. total = item + estimated shipping + import duty, assuming delivery to the US. Shipping and duty are flat estimates (edit them per store in sites.json); check each store at checkout. Sold-out items are listed last.</p>`
     :`<p>${DATA.browse?'No '+esc(DATA.category)+' listings match your filters.':'No matching results found.'}</p>`)
@@ -1274,9 +1524,28 @@ async function load(term,cat){
     $('sizes').innerHTML=[...set].sort((a,b)=>parseFloat(a)-parseFloat(b)||a.localeCompare(b)).slice(0,80).map(s=>`<option value="${esc(s)}">`).join('');
     const c=DATA.offers.filter(o=>(CAT==='All'||o.category===CAT)&&!o.sold_out&&o.total!=null&&fitPass(o,wantList())).map(o=>o.total);
     amax.value=c.length?Math.floor(Math.min(...c)*0.9):'';
-    $('ctl').hidden=false;$('abar').hidden=!term;render();
+    $('ctl').hidden=false;$('abar').hidden=!term;render();fitFill(DATA);
   }catch(e){out.innerHTML='<div class="card"><p class="mut">Something went wrong: '+esc(e.message)+'</p></div>'}
   go.disabled=false;
+}
+async function fitFill(d){   // size charts that live on product pages arrive after the list is shown
+  const todo=d.offers.filter(o=>o.fit_pending);d.fitLeft=todo.length;
+  if(!todo.length)return;
+  const chunks=[];for(let i=0;i<todo.length;i+=10)chunks.push(todo.slice(i,i+10));
+  let next=0,timer=null;
+  const kick=()=>{if(!timer)timer=setTimeout(()=>{timer=null;if(DATA===d)render()},400)};
+  const worker=async()=>{
+    while(next<chunks.length&&DATA===d){
+      const ch=chunks[next++];
+      try{
+        const r=await fetch('/api/fit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls:ch.map(o=>o.url)})});
+        if(r.ok){const j=(await r.json()).fit||{};ch.forEach(o=>{if(j[o.url])o.measures=j[o.url]})}
+      }catch(e){}
+      ch.forEach(o=>{o.fit_pending=false});d.fitLeft-=ch.length;kick();
+    }
+  };
+  await Promise.all([worker(),worker(),worker()]);
+  if(DATA===d){d.fitLeft=0;render()}
 }
 function search(){
   const term=q.value.trim();
@@ -1298,7 +1567,7 @@ async function loadAlerts(){
     $('alist').innerHTML=d.alerts.map(a=>{
       const cond=esc(a.query)+(a.category?' · '+esc(a.category):'')+(a.size?' · size '+esc(a.size):'')+esc(fitText(a.fit))+' · '+(a.max_total!=null?'≤ '+money(a.max_total,'USD'):'any price, in stock');
       const st=a.notified_total!=null
-        ?`<b>Alert hit:</b> ${money(a.best_total,'USD')} at ${esc(a.best_site)} · <a href="${esc(a.best_url)}" target="_blank" rel="noopener">${esc(a.best_title)}</a>`
+        ?`<b>Alert hit:</b> ${money(a.best_total,'USD')} at ${esc(a.best_site)} · <a href="${esc(safeUrl(a.best_url))}" target="_blank" rel="noopener noreferrer">${esc(a.best_title)}</a>`
         :a.best_total!=null?`Watching. Best now ${money(a.best_total,'USD')} at ${esc(a.best_site)}`
         :a.checked?'Watching. Nothing in stock matches yet.':'Checking…';
       return `<div class="arow"><div>${cond}<div class="mut">${st}${a.checked?' · checked '+esc(new Date(a.checked*1000).toLocaleString()):''}</div></div>
@@ -1340,6 +1609,9 @@ buildCats();updateCats(null);drawSizes();
 loadAlerts();setInterval(loadAlerts,60000);
 </script></html>"""
 
+if os.environ.get("BACKGROUND") == "1":   # under gunicorn (one worker): BACKGROUND=1 gunicorn -w 1 app:app
+    start_background()
+
 if __name__ == "__main__":
-    threading.Thread(target=alert_loop, daemon=True).start()
+    start_background()
     app.run(debug=False)

@@ -18,10 +18,10 @@ Optional env var: `ALERT_INTERVAL_MIN` (60). Email alerts were removed for now (
 - `alerts.db`: SQLite, created on first run.
 
 ## Endpoints
-`/` page · `GET /api/search?q=&category=` (20/min) · `/api/alerts` (GET/POST 10/h/DELETE, owner-scoped) · `POST /api/alerts/check` (owner's alerts only, 5/h)
+`/` page · `GET /api/search?q=&category=` (20/min) · `POST /api/fit` (body `{urls:[≤10]}`, 600/h; only our stores' product pages) · `/privacy` · `/api/alerts` (GET/POST 10/h/DELETE, owner-scoped) · `POST /api/alerts/check` (owner's alerts only, 5/h)
 
 ## How it works
-- Shopify stores: `/products.json` catalog (cached 1h), `/meta.json` for currency. Other stores: search-page scrape (selectors, then JSON-LD, then a heuristic). robots.txt is checked.
+- Shopify stores: `/products.json` catalog (cached 1h, `cached_catalog`: stale-while-revalidate, an older copy up to 24h is served at once while a fresh one loads; a failed refresh keeps the last good copy and retries in 5 min; one fetch per store at a time), `/meta.json` for currency. Converted listings are memoised per catalog (`shopify_found`). Other stores: search-page scrape (selectors, then JSON-LD, then a heuristic). robots.txt is checked.
 - Currency: open.er-api.com, fallback Frankfurter, cached 12h.
 - Est. total = item + shipping + duty, converted to USD. Defaults: duty 16.6% on non-US origins (cotton jeans); the US $800 de minimis is suspended. Flat shipping estimates; edit per store in `sites.json`.
 - Fit data (waist, thigh, front/back rise, knee, leg opening): parsed from size charts in product HTML (either table orientation, text charts, cm to inches, fractions), with a product-page fallback (cached 6h, max 10 page fetches per store).
@@ -38,11 +38,19 @@ Optional env var: `ALERT_INTERVAL_MIN` (60). Email alerts were removed for now (
 - Fit filters show under All (both groups), Bottoms (bottoms group) and Tops / Outerwear (upper-body group).
 - Alerts: hourly background thread; can be scoped by category, size and fit ranges. In-app only: the email feature was removed before launch (an open email field lets anyone send mail to any address). If it returns, it needs address validation, double opt-in, unsubscribe and per-address limits. The old `email` DB column is kept for compatibility and ignored.
 
+## Speed
+- Warm-up: `start_background()` (called by `python app.py`, or set `BACKGROUND=1` under gunicorn with ONE worker) loads the disk cache, then `prewarm_loop` refreshes every store's catalog, `/meta.json` and the FX rates every `WARM_EVERY_MIN` (30) minutes, so a search normally never waits on stores. Catalogs are saved gzip-JSON in `cache/` (`CACHE_DIR`, git-ignored) and reloaded at startup (up to 24h old), so a restart is instant.
+- Lazy fit charts: `/api/search` runs `run_search(..., lazy=True)`: charts in the catalog description are used, charts already cached from product pages are used, the rest are flagged `fit_pending` (max `MAX_PAGE_FETCHES` = 10 per store) and the page asks `POST /api/fit` in batches of 10 (3 at a time) after the list is shown, then re-renders (status "reading N more size charts…"; pending listings are not counted as "hidden: no measurement data"). Alerts call `run_search` with `lazy=False`, so they see full data.
+
 ## Abuse protection
 - Flask-Limiter, per visitor IP, in-memory by default (`LIMITER_STORAGE=redis://...` for several workers). Starting limits: search 20/min, create alert 10/h, check-now 5/h, everything 300/h. Env overrides: `LIMIT_SEARCH`, `LIMIT_ALERT_CREATE`, `LIMIT_ALERT_CHECK`, `LIMIT_DEFAULT`. Over the limit returns 429 JSON with `Retry-After`; the page shows a "wait a minute" message.
 - Set `TRUST_PROXY=<number of proxies>` behind a host/proxy so the limiter sees real visitor IPs.
 - Alert ownership: random `ps_owner` cookie (HttpOnly, SameSite=Lax); list/delete/check only touch that owner's alerts; max 20 each (`MAX_ALERTS_PER_OWNER`). Pre-existing alerts with no owner are hidden. The hourly background job still checks all alerts.
-- Still open before launch: security headers/CSP, only allowing http(s) store links, dependency pinning, privacy policy.
+- Security headers on every response (`security_headers`): CSP (page: `default-src 'none'`, scripts and styles only with a per-response nonce, `style-src-attr 'unsafe-inline'`, fonts from Google Fonts, images any https/http, `connect-src 'self'`, `frame-ancestors 'none'`; JSON: `default-src 'none'`), nosniff, X-Frame-Options DENY, Referrer-Policy, Permissions-Policy, COOP, HSTS when HTTPS, `Cache-Control: no-store` on `/api/`. No inline event handlers or `eval` in the page (the CSP forbids them); tests that use Playwright `wait_for_function` with a string must use polling instead.
+- Links: the server drops any listing whose URL is not http(s) with a host (`safe_http`) and nulls non-http(s) image URLs; the page also runs every href / src through `safeUrl`. `/api/fit` only fetches product pages on configured store hosts.
+- Dependencies pinned in `requirements.txt` (direct + transitive, exact versions); `requirements.in` holds the loose direct list for upgrades.
+- Privacy page at `/privacy` (footer link); optional `CONTACT_EMAIL` env adds a contact line. It describes: no accounts, the `ps_owner` cookie, `ps_sizes` local storage, in-memory IP rate limiting, Google Fonts, store sites. Update it if data collection changes.
+- Still open before launch: a real contact address in `CONTACT_EMAIL`, HTTPS host with `TRUST_PROXY`, a read of the privacy text by the owner (it is plain-language, not legal advice).
 
 ## Design
 Bauhaus design system, style only: `--dp-*` tokens, Host Grotesk, flat red/blue/yellow planes, square corners, circular search button with hard offset shadow. Under 720px the results table becomes stacked cards (`tr.item`, `data-l` labels).
