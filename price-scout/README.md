@@ -35,6 +35,12 @@ To look at one product page in detail (for example a store whose size table is n
 2. Each store gets a one-line verdict, for example "chart appears to be an image" or "measurement words present but parser missed it".
 3. Attach the saved `fit_diagnosis.txt` to the chat so the parser can be taught that store's chart layout. For each "parser missed" product the file includes the page address and the raw HTML around the measurement words, so no separate page dump is needed.
 
+### 3d. Find out why one product shows no sizes or measurements
+
+1. Run `python3 inspect_product.py "https://store.com/products/the-product"`.
+2. Read the lines it prints: the option names, the size buttons the app builds from them, the category, and whether a size chart was found in the description or on the page and matched to a size.
+3. Paste the output when asking for a fix.
+
 ### 3c. Find out why a search finds nothing at one store
 
 Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your search text, and part of the store's name). It loads that store's real catalog and prints, for each word you typed, how many products contain it as a whole word, how many match every word (what the site shows), and the closest misses with the word that was missing. Use it when a store seems to be missing results.
