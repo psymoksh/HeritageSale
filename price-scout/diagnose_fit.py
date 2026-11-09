@@ -12,10 +12,10 @@ import argparse, re, sys
 from bs4 import BeautifulSoup
 import app
 
-WORDS = re.compile(r"\b(waist|thigh|front rise|back rise|rise|inseam|leg opening|knee|hem)\b", re.I)
+WORDS = re.compile(r"\b(waist|thigh|front rise|back rise|rise|inseam|leg opening|knee|hem|chest|bust|pit to pit|shoulders?|sleeves?|back length|body length)\b", re.I)
 
 
-JP_WORDS = re.compile("ウエスト|ウェスト|股上|股下|ワタリ|わたり|渡り|太もも|ひざ|膝|裾幅|裾周り|裾回り|ヒップ")
+JP_WORDS = re.compile("ウエスト|ウェスト|股上|股下|ワタリ|わたり|渡り|太もも|ひざ|膝|裾幅|裾周り|裾回り|ヒップ|身幅|肩幅|着丈|袖丈|裄丈|胸囲|バスト")
 
 
 def has_chart_words(text):
@@ -69,6 +69,9 @@ def verdict(cat, page):
     return "no measurement words in the description or the page (chart may be loaded by script, or the store does not publish one)"
 
 
+CATEGORY = "Bottoms"
+
+
 def run(site, out):
     base = site["base_url"].rstrip("/")
     out.write(f"\n{'=' * 78}\n{site['name']}  {base}\n")
@@ -80,7 +83,7 @@ def run(site, out):
     if not products:
         out.write("  (not a Shopify catalog: html/square store; fit data comes from product pages)\n")
         return "skipped (not Shopify)"
-    jeans = [p for p in products if app.categorize(p.get("product_type", ""), p["title"], p.get("tags") or []) == "Bottoms"
+    jeans = [p for p in products if app.categorize(p.get("product_type", ""), p["title"], p.get("tags") or []) == CATEGORY
              and any(v.get("available") for v in p.get("variants", []))][:4]
     verdicts, missed = [], []
     for p in jeans:
@@ -134,10 +137,13 @@ def dump(url):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-s", "--store")
+    ap.add_argument("-c", "--category", default="Bottoms", choices=["Bottoms", "Tops", "Outerwear"], help="garments to sample (default Bottoms)")
     ap.add_argument("--dump", metavar="URL", help="inspect one product page in detail")
     a = ap.parse_args()
     if a.dump:
         return dump(a.dump)
+    global CATEGORY
+    CATEGORY = a.category
     sites = [s for s in app.load_sites() if not a.store or a.store.lower() in s["name"].lower()]
     with open("fit_diagnosis.txt", "w", encoding="utf-8") as out:
         for s in sites:

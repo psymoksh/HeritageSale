@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 import app
 
 
-def check(site, query):
+def check(site, query, category="Bottoms"):
     t0 = time.time()
     base = site["base_url"].rstrip("/")
     row = {"store": site["name"], "url": base, "ok": False}
@@ -48,11 +48,12 @@ def check(site, query):
     row["categories"] = dict(Counter(o["category"] for o in offers).most_common())
     prices = [o["price"] for o in offers if o["price"]]
     row["price_range"] = [min(prices), max(prices)] if prices else None
-    bottoms = [o for o in offers if o["category"] == "Bottoms"][:10]
-    if bottoms:
-        app.fill_measures(bottoms)
-        row["bottoms_sampled"] = len(bottoms)
-        row["bottoms_with_measures"] = sum(bool(o["measures"]) for o in bottoms)
+    sample = [o for o in offers if o["category"] == category][:10]     # jeans by default; -c Tops checks chest/shoulder/length/sleeve
+    if sample:
+        app.fill_measures(sample)
+        row["sampled"] = len(sample)
+        row["with_measures"] = sum(bool(o["measures"]) for o in sample)
+        row["measure_category"] = category
     row["samples"] = [f'{o["title"]} | {o["price"]} {o["currency"]} | {o["category"]}' for o in offers[:3]]
     return row
 
@@ -61,14 +62,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("query", nargs="?", default="", help="optional product text; blank = whole catalog")
     ap.add_argument("-s", "--store", help="only stores whose name contains this")
+    ap.add_argument("-c", "--category", default="Bottoms", choices=["Bottoms", "Tops", "Outerwear"],
+                    help="which garments to sample for measurements (default Bottoms; Tops and Outerwear read chest/shoulder/length/sleeve)")
     a = ap.parse_args()
     sites = [s for s in app.load_sites() if not a.store or a.store.lower() in s["name"].lower()]
     with ThreadPoolExecutor(6) as ex:
-        rows = list(ex.map(lambda s: check(s, a.query), sites))
+        rows = list(ex.map(lambda s: check(s, a.query, a.category), sites))
     print(f'{"STORE":24} {"OK":3} {"LISTINGS":>8} {"CUR":5} {"SHIPS FROM":14} {"SIZES":>6} {"IMG":>5} {"MEAS":>7}  NOTE')
     for r in rows:
         if r["ok"]:
-            meas = f'{r["bottoms_with_measures"]}/{r["bottoms_sampled"]}' if "bottoms_sampled" in r else "-"
+            meas = f'{r["with_measures"]}/{r["sampled"]}' if "sampled" in r else "-"
             print(f'{r["store"][:24]:24} yes {r["listings"]:>8} {r["currency"]:5} {r["ships_from"][:14]:14} '
                   f'{r["with_sizes"]:>6} {r["with_images"]:>5} {meas:>7}  {r["method"]}')
         else:

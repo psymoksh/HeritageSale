@@ -52,6 +52,8 @@ details[open]>summary{border-bottom:var(--dp-border-rule-compact) solid var(--dp
 .fitgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px 20px;padding:18px var(--dp-spacing-gutter) 6px}
 .fitgrid input{width:76px}
 details>p.mut{margin:0;padding:6px var(--dp-spacing-gutter) 18px}
+.fitlab{margin:0;padding:12px var(--dp-spacing-gutter) 0;font-weight:var(--dp-typography-weight-action);color:var(--dp-color-ink)}
+.fitlab+.fitgrid{padding-top:8px}
 .card{background:#fff;border:0;border-bottom:var(--dp-border-rule) solid var(--dp-color-ink);padding:20px var(--dp-spacing-gutter) 24px;margin:0;overflow-x:auto}
 details .card{border-bottom:0;padding-top:12px}
 .scroll{overflow-x:auto}
@@ -156,12 +158,13 @@ tr.item{scroll-margin-top:150px}
 <main>
 <div class="ctl" id="ctl" hidden>
 <label>Sort by <select id="sort"><option value="total">Price, low to high: est. total</option><option value="usd">Price, low to high: item price</option></select></label>
-<label for="size">My sizes</label><span id="sizebox" class="sizebox"><span id="sizetags"></span><input id="size" list="sizes" placeholder="add size, Enter" autocomplete="off" aria-label="Add a size"></span><datalist id="sizes"></datalist>
+<label for="size">My sizes</label><span id="sizebox" class="sizebox"><span id="sizetags"></span><input id="size" list="sizes" placeholder="add size" autocomplete="off" aria-label="Add a size"></span><datalist id="sizes"></datalist>
 <label><input type="checkbox" id="stock"> In stock only</label>
 <label><input type="checkbox" id="sale"> On sale only</label></div>
 <details id="fit" hidden open><summary id="fitsum">Fit measurements (inches)</summary>
-<div class="fitgrid fit"><label>Waist <input id="min_waist" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_waist" type="number" step="0.25" min="0" placeholder="max"></label><label>Thigh <input id="min_thigh" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_thigh" type="number" step="0.25" min="0" placeholder="max"></label><label>Front rise <input id="min_front_rise" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_front_rise" type="number" step="0.25" min="0" placeholder="max"></label><label>Back rise <input id="min_back_rise" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_back_rise" type="number" step="0.25" min="0" placeholder="max"></label><label>Knee <input id="min_knee" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_knee" type="number" step="0.25" min="0" placeholder="max"></label><label>Leg opening <input id="min_leg_opening" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_leg_opening" type="number" step="0.25" min="0" placeholder="max"></label></div>
-<p class="mut">Garment measurements read from each product’s size chart. Listings without a readable chart are hidden while a range is set. Try waist 16–17 and thigh up to 12.3.</p></details>
+<div id="fitB"><p class="mut fitlab">Bottoms</p><div class="fitgrid fit"><label>Waist <input id="min_waist" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_waist" type="number" step="0.25" min="0" placeholder="max"></label><label>Thigh <input id="min_thigh" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_thigh" type="number" step="0.25" min="0" placeholder="max"></label><label>Front rise <input id="min_front_rise" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_front_rise" type="number" step="0.25" min="0" placeholder="max"></label><label>Back rise <input id="min_back_rise" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_back_rise" type="number" step="0.25" min="0" placeholder="max"></label><label>Knee <input id="min_knee" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_knee" type="number" step="0.25" min="0" placeholder="max"></label><label>Leg opening <input id="min_leg_opening" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_leg_opening" type="number" step="0.25" min="0" placeholder="max"></label></div></div>
+<div id="fitT"><p class="mut fitlab">Tops and outerwear</p><div class="fitgrid fit"><label>Chest <input id="min_chest" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_chest" type="number" step="0.25" min="0" placeholder="max"></label><label>Shoulder <input id="min_shoulder" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_shoulder" type="number" step="0.25" min="0" placeholder="max"></label><label>Length <input id="min_length" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_length" type="number" step="0.25" min="0" placeholder="max"></label><label>Sleeve <input id="min_sleeve" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_sleeve" type="number" step="0.25" min="0" placeholder="max"></label></div></div>
+<p class="mut">Garment measurements read from each product’s size chart (its description, or its product page). Bottoms: waist, thigh, rises, knee, leg opening. Tops and outerwear: chest (flat, pit to pit), shoulder, length (back length), sleeve. Full circumferences are halved to flat widths and centimetres converted to inches. Listings without a readable chart (for example, a chart that is only an image) are hidden while a range is set, and a range for one group hides products from the other.</p></details>
 <div id="out"></div>
 <div class="ctl" id="abar" hidden>
 <span>Alert me when est. total is at or below $</span><input id="amax" class="sm" type="number" min="0" step="1" placeholder="any" aria-label="Alert price">
@@ -226,6 +229,12 @@ function measOf(d){
     waist:q4(n/2+0.5),thigh:q4(11.6+(n-30)*0.3+v),front_rise:q4(10.6+v),back_rise:q4(14.4+v),
     knee:q4((tight?7.9:8.6)+(n-30)*0.1),leg_opening:q4((tight?6.9:7.8)+(n-30)*0.05)}});
 }
+const TOPW={S:[19,16.5,26.5,23.5],M:[20.5,17.5,27.5,24.5],L:[22,18.5,28.5,25],XL:[23.5,19.5,29.5,25.5]};
+function topsOf(d){   // made-up chest / shoulder / length / sleeve (inches); Self Edge publishes no chart, to show the fallback
+  if(d.site==='Self Edge')return [];
+  const jk=d.cat==='Outerwear'?[2,1,1.5,0.5]:[0,0,0,0],v=(d.h%3)*0.25;
+  return d.sizes.filter(s=>TOPW[s[0]]).map(([lab,ok])=>{const t=TOPW[lab];return {size:lab,in_stock:ok,chest:q4(t[0]+jk[0]+v),shoulder:q4(t[1]+jk[1]),length:q4(t[2]+jk[2]),sleeve:q4(t[3]+jk[3])}});
+}
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const money=(v,c)=>new Intl.NumberFormat('en-US',{style:'currency',currency:c,maximumFractionDigits:c==='JPY'?0:2}).format(v);
@@ -237,11 +246,15 @@ const parseSizes=t=>String(t||'').split(/[,;]+/).map(x=>x.trim()).filter(Boolean
 const wantList=()=>SIZES.concat(parseSizes(sizeIn.value).filter(x=>!SIZES.some(y=>norm(y)===norm(x))));
 const saveSizes=()=>{};
 function drawSizes(){$('sizetags').innerHTML=SIZES.map((s,i)=>`<button type="button" class="stag" data-rm="${i}" aria-label="Remove size ${esc(s)}">${esc(s)} ×</button>`).join('')}
-function commitSize(){parseSizes(sizeIn.value).forEach(x=>{if(!SIZES.some(y=>norm(y)===norm(x)))SIZES.push(x)});sizeIn.value='';saveSizes();drawSizes();render()}
+function commitSize(){parseSizes(sizeIn.value).forEach(x=>{if(!SIZES.some(y=>norm(y)===norm(x)))SIZES.push(x)});sizeIn.value='';saveSizes();drawSizes()}   // no re-render: the typed text already counted, and a re-draw here would swallow a click on the results
 const hasSize=(o,w)=>!w.length||o.sizes.some(s=>s[1]&&w.some(x=>sizeMatch(s[0],x)));
-const FIT=[['waist','Waist'],['thigh','Thigh'],['front_rise','Front rise'],['back_rise','Back rise'],['knee','Knee'],['leg_opening','Leg opening']];
+const FIT_B=[['waist','Waist'],['thigh','Thigh'],['front_rise','Front rise'],['back_rise','Back rise'],['knee','Knee'],['leg_opening','Leg opening']];
+const FIT_T=[['chest','Chest'],['shoulder','Shoulder'],['length','Length'],['sleeve','Sleeve']];
+const FIT=FIT_B.concat(FIT_T);
+const KEYS_BY={Bottoms:FIT_B,Tops:FIT_T,Outerwear:FIT_T};   // Outerwear shares the upper-body chart
+const keysFor=o=>KEYS_BY[o.category]||FIT.filter(([k])=>o.measures.some(m=>m[k]!=null));
 const num=id=>{const v=parseFloat($(id).value);return isNaN(v)?null:v};
-const fitObj=()=>{const o={};FIT.forEach(([k])=>{const lo=num('min_'+k),hi=num('max_'+k);if(lo!=null||hi!=null)o[k]=[lo,hi]});return o};
+const fitObj=()=>{const o={};visKeys().forEach(([k])=>{const lo=num('min_'+k),hi=num('max_'+k);if(lo!=null||hi!=null)o[k]=[lo,hi]});return o};
 const fitRanges=()=>Object.entries(fitObj());
 const fitSizes=(o,w,rs)=>o.measures.filter(m=>m.in_stock&&(!w.length||w.some(x=>sizeMatch(m.size,x)))&&rs.every(([k,[lo,hi]])=>m[k]!=null&&(lo==null||m[k]>=lo)&&(hi==null||m[k]<=hi))).map(m=>m.size);
 const fitOk=(o,w,rs)=>rs.length?fitSizes(o,w,rs).length>0:hasSize(o,w);
@@ -256,7 +269,7 @@ function compute(d){
   let ship=dom?10:35;if(d.free&&usd>=d.free)ship=0;
   const duty=dom?0:usd*0.166,was=d.was?d.was/RATES[d.cur]:null;
   return {...d,ships_from_name:({US:'United States',JP:'Japan',EU:'Germany'})[d.origin],gid:gkey(d.title),currency:d.cur,category:d.cat,usd,ship,duty,total:usd+ship+duty,wasUsd:was,sold_out:!!d.out,
-    measures:(d.cat==='Bottoms'&&!d.nochart)?measOf(d):[]};
+    measures:(d.cat==='Bottoms'&&!d.nochart)?measOf(d):(d.cat==='Tops'||d.cat==='Outerwear')?topsOf(d):[]};
 }
 function matches(d,t){
   const pl=x=>x.toLowerCase().replace(/[\W_]+/g,' ').trim(),q=pl(t),h=pl(d.title);   // every typed word as a whole word, any order
@@ -290,12 +303,12 @@ function panel(l){
   if(!o.measures.length){
     inner=`<div class="nodata"><b>No measurements we can read for this store.</b><div class="mut">Its size chart may be an image or a pop-up on the product page, so fit filters can’t be checked here. ${link}</div></div>`;
   }else{
-    const cells=m?FIT.filter(([k])=>m[k]!=null).map(([k,lab])=>{
+    const cells=m?keysFor(o).filter(([k])=>m[k]!=null).map(([k,lab])=>{
       const r=fo[k];let c='',st='';
       if(r){const [lo,hi]=r,ok=(lo==null||m[k]>=lo)&&(hi==null||m[k]<=hi);c=ok?' in':' bad';st=ok?'✓ within your '+rngText(r):((lo!=null&&m[k]<lo?'↓ below':'↑ above')+' your '+rngText(r))}
       return `<div class="mc${c}"><div class="k">${lab}</div><div class="v">${fmt(m[k])}<small> in</small></div><div class="st">${st}</div></div>`}).join('')
       :`<p class="mut">This store’s chart has no row for size ${esc(size)}.</p>`;
-    const rows=o.measures,keys=FIT.filter(([k])=>rows.some(r=>r[k]!=null)),idx=m?rows.indexOf(m):-1;
+    const rows=o.measures,keys=keysFor(o).filter(([k])=>rows.some(r=>r[k]!=null)),idx=m?rows.indexOf(m):-1;
     const win=(ALLROWS||rows.length<=3||idx<0)?rows:rows.slice(Math.min(Math.max(0,idx-1),rows.length-3),Math.min(Math.max(0,idx-1),rows.length-3)+3);
     inner=`<div class="mcells">${cells}</div><div class="ctw"><table class="ct"><thead><tr><th>Size</th>${keys.map(([,lab])=>`<th>${lab}</th>`).join('')}</tr></thead><tbody>`
       +win.map(r=>`<tr class="${r===m?'hl':''}"><td>${esc(r.size)}${r.in_stock?'':' (sold out)'}</td>${keys.map(([k])=>`<td>${r[k]!=null?fmt(r[k]):''}</td>`).join('')}</tr>`).join('')+'</tbody></table></div>'
@@ -306,7 +319,11 @@ function panel(l){
 }
 const CATS=['Bottoms','Tops','Outerwear','Footwear','Bags','Accessories','Other'];
 let CAT='All';
-const fitActive=()=>CAT==='All'||CAT==='Bottoms';
+const showB=()=>CAT==='All'||CAT==='Bottoms',showT=()=>CAT==='All'||CAT==='Tops'||CAT==='Outerwear';
+const fitActive=()=>showB()||showT();
+const visKeys=()=>(showB()?FIT_B:[]).concat(showT()?FIT_T:[]);   // only the visible groups count
+const rangesFor=o=>{const ks=(KEYS_BY[o.category]||[]).map(x=>x[0]);return fitRanges().filter(([k])=>ks.includes(k))};
+const fitPass=(o,w)=>{const rs=rangesFor(o);return (fitRanges().length&&!rs.length)?false:fitOk(o,w,rs)};   // a range set for one group hides products of the other
 const cmp=key=>(a,b)=>(a.sold_out-b.sold_out)||((a[key]==null?1e18:a[key])-(b[key]==null?1e18:b[key]));
 function buildCats(){
   $('cats').innerHTML=['All'].concat(CATS).map(c=>`<button type="button" class="cat" data-cat="${c}" aria-pressed="false"><span class="nm">${c}</span><span class="cn"></span></button>`).join('');
@@ -322,7 +339,7 @@ function updateCats(base){
 }
 function filtered(){
   const want=wantList(),ranges=fitActive()?fitRanges():[];
-  const base=DATA.offers.filter(o=>!(stockBox.checked&&o.sold_out)&&!(saleBox.checked&&!o.was)&&fitOk(o,want,ranges));
+  const base=DATA.offers.filter(o=>!(stockBox.checked&&o.sold_out)&&!(saleBox.checked&&!o.was)&&fitPass(o,want));
   return {want,ranges,base};
 }
 function render(){
@@ -330,7 +347,7 @@ function render(){
   document.body.classList.toggle('sheet-open',!!SEL);
   const key=sortSel.value,{want,ranges,base}=filtered();
   const inCat=o=>CAT==='All'||o.category===CAT;
-  $('fit').hidden=!fitActive();
+  $('fit').hidden=!fitActive();$('fitB').hidden=!showB();$('fitT').hidden=!showT();document.querySelectorAll('.fitlab').forEach(e=>e.hidden=!(showB()&&showT()));
   $('fitsum').textContent='Fit measurements (inches)'+(ranges.length?' · '+ranges.length+' active':'');
   updateCats(base);
   const offers=base.filter(inCat).sort(cmp(key));
@@ -339,7 +356,7 @@ function render(){
     const item=o.usd==null?'n/a':(o.currency==='USD'?'':'≈ ')+money(o.usd,'USD');
     const local=money(o.price,o.currency)+(o.currency==='USD'?'':' '+o.currency)+(o.assumed?'*':'');
     const was=o.was?`<div class="mut"><s>${esc(money(o.was,o.currency))}</s> <span class="sale">−${Math.round((1-o.price/o.was)*100)}%</span></div>`:'';
-    const fits=ranges.length?fitSizes(o,want,ranges):null;
+    const rs=rangesFor(o),fits=rs.length?fitSizes(o,want,rs):null;
     const img=`<div class="thumb" style="--h:${o.h}">${ICON[o.category]}</div>`;
     return `<tr class="item ${first?'best':''}${sub?' sub':''}"><td>${img}</td>
       <td><a href="#" onclick="return false">${esc(o.title)}</a>${first?`<span class="tag">${lowTag}</span>`:''}<div class="mut">${esc(o.site)}</div>${chips(o,want,fits)}</td>
@@ -385,7 +402,7 @@ function load(term,cat){
   DATA={offers,notes:[],browse:!term,category:cat||null,truncated:false,total_matches:offers.length};LASTQ=term;
   const set=new Set();offers.forEach(o=>o.sizes.forEach(s=>s[1]&&set.add(s[0])));
   $('sizes').innerHTML=[...set].sort((a,b)=>parseFloat(a)-parseFloat(b)||a.localeCompare(b)).slice(0,80).map(s=>`<option value="${esc(s)}">`).join('');
-  const c=offers.filter(o=>(CAT==='All'||o.category===CAT)&&!o.sold_out&&fitOk(o,wantList(),fitActive()?fitRanges():[])).map(o=>o.total);
+  const c=offers.filter(o=>(CAT==='All'||o.category===CAT)&&!o.sold_out&&fitPass(o,wantList())).map(o=>o.total);
   amax.value=c.length?Math.floor(Math.min(...c)*0.9):'';
   $('ctl').hidden=false;$('abar').hidden=!term;render();
 }

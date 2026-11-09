@@ -22,7 +22,7 @@ Design and behavior notes live in `CLAUDE.md`. This file is the step-by-step gui
 The cloud sandbox cannot reach the stores, so do this on your own computer.
 
 1. Test one store first: `python check_stores.py -s "Self Edge"`.
-2. Test all 24: `python check_stores.py`. It takes a minute or two.
+2. Test all 24: `python check_stores.py` (add `-c Tops` to check tops' chest/shoulder/length/sleeve instead of jeans). It takes a minute or two.
 3. Read the table: `OK` says whether the store was reachable, `LISTINGS` how many items were found, `SHIPS FROM` the detected country, `SIZES`/`IMG` data coverage, `MEAS` how many sampled jeans had readable measurements.
 4. Open `store_report.json` for the full detail, including the reason each failed store failed.
 5. Share the table to get failing stores fixed.
@@ -72,6 +72,8 @@ Run `python3 explain_search.py "momotaro 0705 tapered" -s "Red Cast"` (your sear
 ## Change log
 
 - **Several sizes at once.** "My sizes" now takes more than one size: type a size and press Enter (or comma, or pick from the list) and it becomes a tag; click a tag's × or press Backspace in the empty box to remove it. A product shows if any chosen size is in stock, its size buttons show only your sizes, and what you are still typing filters live. The chosen sizes are remembered in this browser, and a price alert saves all of them (any one in stock triggers it). The prototype matches.
+
+- **Tops and outerwear size charts.** Tops and outerwear now get their own measurements: chest (flat, pit to pit), shoulder, length (back length) and sleeve. The parser reads them from the same chart layouts as bottoms (tables either way round, text lines, slash-separated lists, single-size notes; English and Japanese labels such as 身幅, 肩幅, 着丈, 袖丈), converts cm to inches, handles fractions, and halves a full chest circumference (over 30 in) to the flat width, like the waist. Letter sizes (S, M, L, XL, "Small") in text charts are recognised. The fit panel has a second group of min/max boxes for them: under All you see both groups, under Tops or Outerwear only the upper-body group, under Bottoms only the bottoms group. A range applies to its own category only, and while any range is set a product needs a range for its own category (so a chest range under All hides bottoms, and setting both shows bottoms that fit the waist range and tops that fit the chest range). The size panel shows the four upper-body cards and chart rows for a top. Price alerts accept the new ranges. `check_stores.py` and `diagnose_fit.py` take `-c Tops` (or `Outerwear`) to check them live. The chart row's size is now the product's own size label, so "Small" in a chart matches an "S" variant. Also fixed: clicking a size button right after typing in "My sizes" no longer loses the click.
 
 - **Search explainer.** `explain_search.py "query" -s "store"` shows why a store returns few or no results for a search (per-word counts and near misses). Added after Red Cast looked empty although its catalog loads (1,877 listings).
 
