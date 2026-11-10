@@ -1,2 +1,9 @@
 cache/
 __pycache__/
+alerts.db
+*.db
+store_report.json
+fit_diagnosis.txt
+page_dump.html
+celluloid_page.html
+.env

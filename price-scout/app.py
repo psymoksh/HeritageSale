@@ -1015,7 +1015,9 @@ def colorme_detail(url, enc="euc-jp"):
 def add_colorme_detail(site, offers):
     """Fill sizes (with stock) and size-chart measurements for the cheapest listings of a Color Me Shop store."""
     enc = site.get("page_encoding", "euc-jp")
-    todo = sorted(offers, key=lambda o: o["price"])[:DETAIL_CAP]
+    host = urlparse(site["base_url"]).netloc.lower()
+    # Only the store's own host is ever fetched: a listing link in scraped HTML must never make the server call another address.
+    todo = sorted((o for o in offers if urlparse(o["url"]).netloc.lower() == host), key=lambda o: o["price"])[:DETAIL_CAP]
     with ThreadPoolExecutor(8) as ex:
         prods = list(ex.map(lambda o: colorme_detail(o["url"], enc), todo))
     for o, prod in zip(todo, prods):
