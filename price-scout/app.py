@@ -1,7 +1,7 @@
 """Price Scout: type a product, and it searches your list of stores for the best prices.
 Run:  pip install -r requirements.txt && python app.py   ->  http://localhost:5000
 """
-import gzip, hashlib, json, os, re, secrets, sqlite3, threading, time, urllib.robotparser
+import gzip, hashlib, json, os, re, secrets, sqlite3, threading, time, unicodedata, urllib.robotparser
 from concurrent.futures import ThreadPoolExecutor
 from html import escape
 from urllib.parse import quote_plus, urljoin, urlparse
@@ -514,6 +514,28 @@ def _tab_charts(lines, out):
 BASE_SIZE = re.compile(r"measurements?\s+(?:are\s+)?based\s+on\s+(?:a\s+)?(?:size\s+)?(w?\d{2}|[2-5]xl|x{0,3}[sl]|m|small|medium|large)(?![a-z0-9])", re.I)
 
 
+JP_PAREN = re.compile(r"^(\S+?(?:\([^)]*\))?)\s*\((.*:.*)\)\s*$")
+
+
+def _paren_charts(lines, out):
+    """A size per line with its measurements in brackets: '2(M) (身幅: 53cm 肩幅: 47cm 着丈: 70cm 袖丈: 62cm)' (Celluloid).
+    Full-width digits and colons are normalised first. Centimetres unless inches are printed."""
+    for raw in lines:
+        m = JP_PAREN.match(unicodedata.normalize("NFKC", raw).strip())
+        if not m:
+            continue
+        label, body = m.group(1), m.group(2)
+        div = 1.0 if re.search(r"inch|インチ|\bin\b|\"", body, re.I) else 2.54
+        vals = {}
+        for name, num in re.findall(r"([^\s:()]{1,12})\s*:\s*(\d+(?:\.\d+)?)", body):
+            k = measure_key(name)
+            if k:
+                vals.setdefault(k, round(float(num) / div, 2))
+        if len(vals) >= 2:
+            for k, v in vals.items():
+                out.setdefault(label, {}).setdefault(k, v)
+
+
 def parse_charts(html):
     """{size label: {measurement: inches}} read from size-chart tables in a product description."""
     if not html:
@@ -536,6 +558,7 @@ def parse_charts(html):
     lines = [l.strip() for l in soup.get_text("\n").splitlines() if l.strip()]
     _slash_charts(lines, out)
     _tab_charts(lines, out)
+    _paren_charts(lines, out)
     for line in lines:      # one garment size only: 'Front rise: 11 1/4", Knee: 18", Leg opening: 16", Measurements based on size 32'
         m = BASE_SIZE.search(line)
         if not m:
@@ -948,6 +971,58 @@ def esc_probe(base, products):
 
 MAX_PAGE_FETCHES = 10  # per store, per search; results are cached
 
+# Color Me Shop stores (Celluloid): the search page lists no sizes. Each product page carries a `var Colorme = {...}` data
+# block with the sizes and stock counts, and the description holds the chart. sites.json: "detail": "colorme",
+# optional "page_encoding" (Celluloid pages are EUC-JP).
+DETAIL_CAP = 30     # product pages read per store per search (cheapest first); cached for 6 hours
+_details = {}       # url -> (fetched_at, pseudo Shopify product or None)
+
+
+def colorme_product(html):
+    """A Shopify-shaped product {title, options, variants, body_html} from a Color Me Shop product page, or None."""
+    i = (html or "").find("var Colorme = ")
+    if i < 0:
+        return None
+    obj, _ = json.JSONDecoder().raw_decode(html, i + len("var Colorme = "))
+    p = obj.get("product") or {}
+    vs = p.get("variants") or []
+    if not vs:
+        return None
+    soup = BeautifulSoup(html, "html.parser")
+    box = soup.select_one(".product_explain")
+    return {"title": p.get("name", ""), "body_html": str(box) if box else "",
+            "options": [{"name": "Size", "position": 1}],
+            "variants": [{"id": v.get("id"), "option1": v.get("option1_value") or v.get("title"),
+                          "available": (v.get("stock_num") or 0) > 0, "price": v.get("option_price")} for v in vs]}
+
+
+def colorme_detail(url, enc="euc-jp"):
+    hit = _details.get(url)
+    if hit and time.time() - hit[0] < (21600 if hit[1] else 300):
+        return hit[1]
+    prod = None
+    try:
+        if allowed(url):
+            r = requests.get(url, headers=HEADERS, timeout=12)
+            r.raise_for_status()
+            prod = colorme_product(r.content.decode(enc, "replace"))
+    except Exception:
+        pass
+    _details[url] = (time.time(), prod)
+    return prod
+
+
+def add_colorme_detail(site, offers):
+    """Fill sizes (with stock) and size-chart measurements for the cheapest listings of a Color Me Shop store."""
+    enc = site.get("page_encoding", "euc-jp")
+    todo = sorted(offers, key=lambda o: o["price"])[:DETAIL_CAP]
+    with ThreadPoolExecutor(8) as ex:
+        prods = list(ex.map(lambda o: colorme_detail(o["url"], enc), todo))
+    for o, prod in zip(todo, prods):
+        if prod:
+            o["sizes"] = variant_sizes(prod)
+            o["_fill"] = lambda extra=None, p=prod: measure_rows(p, extra)
+
 
 def search_site(site, query, category=None):
     name, base = site["name"], site["base_url"].rstrip("/")
@@ -989,6 +1064,8 @@ def search_site(site, query, category=None):
                            "assumed": assumed, "sizes": x.get("sizes", []), "category": cat,
                            "was": x.get("was"), "image": safe_http(x.get("image")), "measures": [],
                            "ships_from": ships_from, "codes": x.get("codes", []), "_fill": x.get("measures")})
+        if offers and site.get("detail") == "colorme":
+            add_colorme_detail(site, offers)
         return name, offers, None if offers else "no matching results"
     except Exception as e:
         return name, [], str(e)[:120]

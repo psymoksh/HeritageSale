@@ -117,7 +117,9 @@
     "title": ".item_name",
     "price": ".item_price",
     "link": "a[href*='pid=']",
-    "image": "img.item_img"
+    "image": "img.item_img",
+    "detail": "colorme",
+    "page_encoding": "euc-jp"
   },
   {
     "name": "HeritageQualityGoods",
