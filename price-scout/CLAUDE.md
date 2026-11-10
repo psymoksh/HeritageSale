@@ -7,7 +7,7 @@ Flask site that searches a list of heritage / Japanese denim retailers for the b
 pip install -r requirements.txt   # flask, requests, beautifulsoup4
 python app.py                     # http://127.0.0.1:5000
 ```
-Optional env var: `ALERT_INTERVAL_MIN` (60). Email alerts were removed for now (see below).
+Email alerts were removed for now (see below).
 
 ## Layout
 - `app.py`: everything (scraping, currency, categories, alerts, the page template `PAGE`).
@@ -15,10 +15,10 @@ Optional env var: `ALERT_INTERVAL_MIN` (60). Email alerts were removed for now (
   `origin`, `currency`, `shipping_usd`, `free_shipping_over_usd`, `duty_pct`, `duties_included`,
   `type: "html"` with CSS selectors (`item`, `title`, `price`, `link`, optional `image`, `sizes`, `size_soldout_class`) and `search_url` for non-Shopify stores (e.g. Self Edge, which runs OpenCart). `check_stores.py` searches "jeans" for html stores when no query is given. `detail: "colorme"` (+ `page_encoding`) reads each listing's product page for sizes, stock and chart (Celluloid; see How it works), `search_encoding` (e.g. `euc-jp` for Celluloid's Color Me Shop) encodes the query; non-$ prices take the first number (Japanese "30,000円(税込33,000円)" -> 30,000, the export / pre-tax price).
   `type: "square"` + `square_owner_id` + `square_site_id` (Brass Tacks) reads Square Online's storefront JSON at `/app/store/api/v28/editor/users/{owner}/sites/{site}/products`, reshaped like a Shopify product. Find the owner id in the shop page's network requests (`/app/website/cms/api/v1/users/{owner}/...`) and the site id as `catalogSiteId` in the page HTML.
-- `alerts.db`: SQLite, created on first run. `ALERTS_DB=/path/alerts.db` moves it (put it, and `CACHE_DIR`, on the host's persistent disk or alerts are lost on each deploy).
+- `render.yaml` + `.python-version`: free Render deploy (README 6a). No database: alerts are in the browser.
 
 ## Endpoints
-`/` page · `GET /api/search?q=&category=` (20/min) · `POST /api/fit` (body `{urls:[≤10]}`, 600/h; only our stores' product pages) · `/privacy` · `/api/alerts` (GET/POST 10/h/DELETE, owner-scoped) · `POST /api/alerts/check` (owner's alerts only, 5/h)
+`/` page · `GET /api/search?q=&category=` (20/min) · `POST /api/fit` (body `{urls:[≤10]}`, 600/h; only our stores' product pages) · `/privacy` · `POST /api/alerts/check` (body `{alerts:[≤10]}`, stateless, 20/h)
 
 ## How it works
 - Shopify stores: `/products.json` catalog (cached 1h, `cached_catalog`: stale-while-revalidate, an older copy up to 24h is served at once while a fresh one loads; a failed refresh keeps the last good copy and retries in 5 min; one fetch per store at a time), `/meta.json` for currency. Converted listings are memoised per catalog (`shopify_found`). Other stores: search-page scrape (selectors, then JSON-LD, then a heuristic). robots.txt is checked.
@@ -40,20 +40,23 @@ Optional env var: `ALERT_INTERVAL_MIN` (60). Email alerts were removed for now (
 - New search (`newSearch`, the Search button / Enter with text) resets `CAT` to 'All'; picking a category afterwards narrows the same results, and an empty box + Search keeps browsing the picked category.
 - Fit groups: Bottoms = waist, thigh, front/back rise, knee, leg opening; Tops and Outerwear = chest (flat pit to pit), shoulder, length (back length), sleeve (`FIT_B` / `FIT_T`, server `BOTTOM_KEYS` / `TOP_KEYS` / `KEYS_BY_CATEGORY`). Parser: `measure_key` (English + `_JP_KEYS`: 身幅 肩幅 着丈 袖丈), same table / text / slash / single-size layouts, cm to inches, chest > 30 in treated as circumference and halved. Ranges apply per category (`rangesFor`, `fitPass`, server `fit_ok`); with any range set a product needs a range for its own category. Panel keys by category (`keysFor`). cm is detected as `cm` not preceded by a letter, so `72cm` counts (a plain `\bcm\b` missed it); "Body width" = chest. `measure_rows` returns the variant's own size label (chart "Small" matches variant "S"). `check_stores.py` / `diagnose_fit.py` take `-c Tops|Outerwear`.
 - Fit filters show under All (both groups), Bottoms (bottoms group) and Tops / Outerwear (upper-body group).
-- Alerts: hourly background thread; can be scoped by category, size and fit ranges. In-app only: the email feature was removed before launch (an open email field lets anyone send mail to any address). If it returns, it needs address validation, double opt-in, unsubscribe and per-address limits. The old `email` DB column is kept for compatibility and ignored.
+- Alerts: stored in the browser (`ps_alerts`, localStorage, max 10: id, query, category, size, fit, max_total + last result). `POST /api/alerts/check` (`clean_alert`, `check_alert`: `run_search(lazy=False)`, `fit_ok`) returns best total/title/site/url/hit per alert; the page checks on load when >1 h old and on "Check now". No server storage, no timer, no cookie. Email was removed (an open email field lets anyone mail any address; if it returns it needs validation, double opt-in, unsubscribe, per-address limits).
 
 ## Speed
 - Warm-up: `start_background()` (called by `python app.py`, or set `BACKGROUND=1` under gunicorn with ONE worker) loads the disk cache, then `prewarm_loop` refreshes every store's catalog, `/meta.json` and the FX rates every `WARM_EVERY_MIN` (30) minutes, so a search normally never waits on stores. Catalogs are saved gzip-JSON in `cache/` (`CACHE_DIR`, git-ignored) and reloaded at startup (up to 24h old), so a restart is instant.
 - Lazy fit charts: `/api/search` runs `run_search(..., lazy=True)`: charts in the catalog description are used, charts already cached from product pages are used, the rest are flagged `fit_pending` (max `MAX_PAGE_FETCHES` = 10 per store) and the page asks `POST /api/fit` in batches of 10 (3 at a time) after the list is shown, then re-renders (status "reading N more size charts…"; pending listings are not counted as "hidden: no measurement data"). Alerts call `run_search` with `lazy=False`, so they see full data.
 
+## Memory (free host, 512 MB)
+`slim_product` keeps only the fields the app reads (title, handle, vendor, product_type, tags, option names, variants' option1-3/available/price/compare_at_price/barcode, first image, `url`; `body_html` only if it has 2+ measurement words). Applied in `_refresh_catalog` and `load_disk_cache`. All 41,025 products: ~450 MB RSS (was ~790). Any new product field the app reads must be added to `slim_product`. Free Render sleeps after 15 min idle (keep-awake ping optional); `CACHE_DIR=/tmp/cache`, rebuilt after restart.
+
 ## Abuse protection
-- Flask-Limiter, per visitor IP, in-memory by default (`LIMITER_STORAGE=redis://...` for several workers). Starting limits: search 20/min, create alert 10/h, check-now 5/h, everything 300/h. Env overrides: `LIMIT_SEARCH`, `LIMIT_ALERT_CREATE`, `LIMIT_ALERT_CHECK`, `LIMIT_DEFAULT`. Over the limit returns 429 JSON with `Retry-After`; the page shows a "wait a minute" message.
+- Flask-Limiter, per visitor IP, in-memory by default (`LIMITER_STORAGE=redis://...` for several workers). Starting limits: search 20/min, alert check 20/h, everything 300/h. Env overrides: `LIMIT_SEARCH`, `LIMIT_ALERT_CHECK`, `LIMIT_DEFAULT`. Over the limit returns 429 JSON with `Retry-After`; the page shows a "wait a minute" message.
 - Set `TRUST_PROXY=<number of proxies>` behind a host/proxy so the limiter sees real visitor IPs.
-- Alert ownership: random `ps_owner` cookie (HttpOnly, SameSite=Lax); list/delete/check only touch that owner's alerts; max 20 each (`MAX_ALERTS_PER_OWNER`). Pre-existing alerts with no owner are hidden. The hourly background job still checks all alerts.
+- No cookies are set (alert ownership cookie removed).
 - Security headers on every response (`security_headers`): CSP (page: `default-src 'none'`, scripts and styles only with a per-response nonce, `style-src-attr 'unsafe-inline'`, fonts from Google Fonts, images any https/http, `connect-src 'self'`, `frame-ancestors 'none'`; JSON: `default-src 'none'`), nosniff, X-Frame-Options DENY, Referrer-Policy, Permissions-Policy, COOP, HSTS when HTTPS, `Cache-Control: no-store` on `/api/`. No inline event handlers or `eval` in the page (the CSP forbids them); tests that use Playwright `wait_for_function` with a string must use polling instead.
 - Links: the server drops any listing whose URL is not http(s) with a host (`safe_http`) and nulls non-http(s) image URLs; the page also runs every href / src through `safeUrl`. `/api/fit` only fetches product pages on configured store hosts.
 - Dependencies pinned in `requirements.txt` (direct + transitive, exact versions); `requirements.in` holds the loose direct list for upgrades.
-- Privacy page at `/privacy` (footer link); optional `CONTACT_EMAIL` env adds a contact line. It describes: no accounts, the `ps_owner` cookie, `ps_sizes` local storage, in-memory IP rate limiting, Google Fonts, store sites. Update it if data collection changes.
+- Privacy page at `/privacy` (footer link); optional `CONTACT_EMAIL` env adds a contact line. It describes: no accounts, no cookies, `ps_sizes` and `ps_alerts` local storage, in-memory IP rate limiting, Google Fonts, store sites. Update it if data collection changes.
 - Still open before launch: a real contact address in `CONTACT_EMAIL`, HTTPS host with `TRUST_PROXY`, a read of the privacy text by the owner (it is plain-language, not legal advice).
 
 ## Design

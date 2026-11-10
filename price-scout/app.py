@@ -1,7 +1,7 @@
 """Price Scout: type a product, and it searches your list of stores for the best prices.
 Run:  pip install -r requirements.txt && python app.py   ->  http://localhost:5000
 """
-import gzip, hashlib, json, os, re, secrets, sqlite3, threading, time, unicodedata, urllib.robotparser
+import gzip, hashlib, json, os, re, secrets, threading, time, unicodedata, urllib.robotparser
 from concurrent.futures import ThreadPoolExecutor
 from html import escape
 from urllib.parse import quote_plus, urljoin, urlparse
@@ -19,9 +19,8 @@ app = Flask(__name__)
 # Starting limits, per visitor IP. Override with env vars (no code change) once real traffic shows what is right.
 LIMIT_DEFAULT = os.environ.get("LIMIT_DEFAULT", "300 per hour")        # every route
 LIMIT_SEARCH = os.environ.get("LIMIT_SEARCH", "20 per minute")         # a search fans out to every store
-LIMIT_ALERT_CREATE = os.environ.get("LIMIT_ALERT_CREATE", "10 per hour")
-LIMIT_ALERT_CHECK = os.environ.get("LIMIT_ALERT_CHECK", "5 per hour")  # "Check now" button
-MAX_ALERTS_PER_OWNER = int(os.environ.get("MAX_ALERTS_PER_OWNER", 20))
+LIMIT_ALERT_CHECK = os.environ.get("LIMIT_ALERT_CHECK", "20 per hour")  # alert checks (the page checks once an hour, plus "Check now")
+MAX_ALERTS_PER_CHECK = int(os.environ.get("MAX_ALERTS_PER_CHECK", 10))   # alerts live in the visitor's browser; one check call carries at most this many
 if os.environ.get("TRUST_PROXY"):    # number of proxies in front of the app (1 on most hosts); without it every visitor shares one IP
     _n = int(os.environ["TRUST_PROXY"])
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_n, x_proto=_n, x_host=_n)
@@ -32,19 +31,6 @@ limiter = Limiter(get_remote_address, app=app, default_limits=[LIMIT_DEFAULT],
 @app.errorhandler(429)
 def too_many(e):
     return jsonify({"error": "Too many requests. Please wait a bit and try again."}), 429
-
-
-# Alerts belong to the browser that made them: a random token in a cookie (no accounts yet).
-OWNER_RE = re.compile(r"[A-Za-z0-9_-]{32}")
-
-
-def owner_id():
-    t = request.cookies.get("ps_owner", "")
-    if OWNER_RE.fullmatch(t):
-        return t
-    if "new_owner" not in g:
-        g.new_owner = secrets.token_urlsafe(24)       # 32 URL-safe characters
-    return g.new_owner
 
 
 def csp(nonce=None):
@@ -71,17 +57,6 @@ def security_headers(resp):
         resp.headers["Cache-Control"] = "no-store"
     return resp
 
-
-@app.after_request
-def set_owner_cookie(resp):
-    t = g.get("new_owner")
-    if t:
-        resp.set_cookie("ps_owner", t, max_age=31536000, httponly=True, samesite="Lax", secure=request.is_secure)
-    return resp
-UA = "Mozilla/5.0 (compatible; PriceScout/1.0)"
-HEADERS = {"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"}
-PRICE_RE = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d+(?:\.\d{2})?)")
-_robots = {}
 
 
 def load_sites():
@@ -250,6 +225,32 @@ def _disk_save(key, ts, products):
         pass   # the disk cache is only a speed-up
 
 
+# ---- Keep catalogs small (a free host has 512 MB) ----
+_CHART_WORDS = re.compile(r"waist|thigh|rise|inseam|opening|chest|shoulder|length|sleeve|knee|hem|bust|width|"
+                          r"身幅|肩幅|着丈|袖丈|ウエスト|ウェスト|股|裾|ワタリ|総丈", re.I)
+
+
+def slim_product(p):
+    """Only the fields the app reads. The description (body_html) is kept only when it looks like it holds a size chart."""
+    if not isinstance(p, dict):
+        return p
+    body = p.get("body_html") or ""
+    if body and len({m.lower() for m in _CHART_WORDS.findall(body)}) < 2:
+        body = ""
+    out = {"title": p.get("title"), "handle": p.get("handle"), "vendor": p.get("vendor"),
+           "product_type": p.get("product_type"), "tags": p.get("tags"),
+           "options": [{"name": o.get("name")} for o in p.get("options") or []],
+           "variants": [{k: v[k] for k in ("option1", "option2", "option3", "available", "price", "compare_at_price", "barcode")
+                         if v.get(k) not in (None, "")} for v in p.get("variants") or []],
+           "images": [{"src": i.get("src")} for i in (p.get("images") or [])[:1] if i.get("src")]}
+    if body:
+        out["body_html"] = body
+    if p.get("url"):
+        out["url"] = p["url"]
+    return {k: v for k, v in out.items() if v not in (None, "", [])}
+
+
+
 def load_disk_cache():
     """Read catalogs saved by an earlier run, so the first search after a restart does not wait on 25 stores."""
     n = 0
@@ -261,7 +262,7 @@ def load_disk_cache():
                 with gzip.open(os.path.join(CACHE_DIR, fn), "rt", encoding="utf-8") as f:
                     d = json.load(f)
                 if d["products"] and time.time() - d["ts"] < CATALOG_STALE_OK and d["key"] not in _catalog:
-                    _catalog[d["key"]] = (d["ts"], d["products"])
+                    _catalog[d["key"]] = (d["ts"], [slim_product(p) for p in d["products"]])
                     n += 1
             except Exception:
                 continue
@@ -276,6 +277,8 @@ def _refresh_catalog(key, fetch):
         if old and time.time() - old[0] < 60:  # someone just refreshed it
             return old[1]
         products = fetch() or None
+        if products:
+            products = [slim_product(p) for p in products]
         now = time.time()
         if products is None and old and old[1]:
             _catalog[key] = (now - CATALOG_TTL + 300, old[1])   # keep the last good copy, try again in 5 minutes
@@ -1255,40 +1258,16 @@ def prewarm_loop():
 
 
 def start_background():
-    """Disk cache -> instant first search; warm-up loop keeps catalogs fresh; alert checker. Safe to call twice."""
+    """Disk cache -> instant first search; warm-up loop keeps catalogs fresh. Safe to call twice."""
     global _started
     if _started:
         return
     _started = True
     load_disk_cache()
     threading.Thread(target=prewarm_loop, daemon=True).start()
-    threading.Thread(target=alert_loop, daemon=True).start()
 
 
-# ---------------- Price alerts (SQLite; checked hourly while the app runs) ----------------
-DB = os.environ.get("ALERTS_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "alerts.db")   # point at a persistent disk when hosting
-
-
-def db():
-    os.makedirs(os.path.dirname(os.path.abspath(DB)), exist_ok=True)
-    c = sqlite3.connect(DB, timeout=10)
-    c.row_factory = sqlite3.Row
-    c.execute("""CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY, query TEXT, size TEXT,
-        max_total REAL, email TEXT, created REAL, checked REAL, best_total REAL, best_title TEXT,
-        best_site TEXT, best_url TEXT, notified_total REAL, notified_at REAL)""")
-    try:
-        c.execute("ALTER TABLE alerts ADD COLUMN fit TEXT")  # older databases
-    except sqlite3.OperationalError:
-        pass
-    try:
-        c.execute("ALTER TABLE alerts ADD COLUMN category TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        c.execute("ALTER TABLE alerts ADD COLUMN owner TEXT")   # who may see/delete it; older alerts have none and are not shown
-    except sqlite3.OperationalError:
-        pass
-    return c
+# ---------------- Price alerts (stored in the visitor's browser; the server only answers "what is the best match now?") ----------------
 
 
 def size_match(label, want):
@@ -1342,95 +1321,56 @@ def fit_ok(o, want, ranges):
                    for k, lo, hi in ranges) for m in o["measures"])
 
 
-def check_alert(r):
-    offers, _, _ = run_search(r["query"])
-    ok = [o for o in offers if not o["sold_out"] and o["total"] is not None
-          and (not r.get("category") or o["category"] == r["category"]) and fit_ok(o, r["size"], fit_ranges(json.loads(r.get("fit") or "{}")))]
-    best = min(ok, key=lambda o: o["total"], default=None)
-    hit = best is not None and (r["max_total"] is None or best["total"] <= r["max_total"])
-    notified, notified_at = r["notified_total"], r["notified_at"]
-    if hit and (notified is None or best["total"] < notified - 0.01):  # new hit, or a further drop
-        notified, notified_at = best["total"], time.time()
-    elif not hit:
-        notified = None  # re-arm so a later hit notifies again
-    with db() as c:
-        c.execute("""UPDATE alerts SET checked=?, best_total=?, best_title=?, best_site=?, best_url=?,
-                     notified_total=?, notified_at=? WHERE id=?""",
-                  (time.time(), best and best["total"], best and best["title"], best and best["site"],
-                   best and best["url"], notified, notified_at, r["id"]))
-
-
-def check_all(owner=None):
-    """Check every alert (the hourly job), or only one visitor's alerts."""
-    with db() as c:
-        rows = [dict(x) for x in c.execute("SELECT * FROM alerts" + (" WHERE owner=?" if owner else ""), (owner,) if owner else ())]
-    for r in rows:
-        try:
-            check_alert(r)
-        except Exception as e:
-            print("alert check failed:", e)
-
-
-def alert_loop():
-    every = float(os.environ.get("ALERT_INTERVAL_MIN", 60)) * 60
-    while True:
-        time.sleep(every)
-        check_all()
-
-
-@app.get("/api/alerts")
-def alerts_list():
-    with db() as c:
-        rows = [dict(x) for x in c.execute(
-            """SELECT id, query, size, max_total, created, checked, best_total, best_title, best_site, best_url,
-                      notified_total, notified_at, fit, category FROM alerts WHERE owner=? ORDER BY id DESC""", (owner_id(),))]
-    return jsonify({"alerts": rows})
-
-
-@app.post("/api/alerts")
-@limiter.limit(LIMIT_ALERT_CREATE)
-def alerts_add():
-    d = request.get_json() or {}
-    q = (d.get("query") or "").strip()[:120]
+def clean_alert(d):
+    """One alert sent by the page, validated. None when it is unusable."""
+    if not isinstance(d, dict):
+        return None
+    q = str(d.get("query") or "").strip()[:120]
+    if not q:
+        return None
     try:
         mx = float(d["max_total"]) if d.get("max_total") not in (None, "") else None
-    except ValueError:
-        return jsonify({"error": "bad price"}), 400
-    if not q:
-        return jsonify({"error": "no search"}), 400
+    except (TypeError, ValueError):
+        return None
     cat = d.get("category") if d.get("category") in CATEGORIES else ""
     fit = {}
+    raw = d.get("fit") if isinstance(d.get("fit"), dict) else {}
     for k in FIT_KEYS:
         try:
-            pair = [None if v in (None, "") else float(v) for v in (d.get("fit") or {}).get(k, [None, None])[:2]]
+            pair = [None if v in (None, "") else float(v) for v in (raw.get(k) or [None, None])[:2]]
         except (TypeError, ValueError):
             continue
         if any(v is not None for v in pair):
             fit[k] = pair
-    me = owner_id()
-    with db() as c:
-        if c.execute("SELECT COUNT(*) FROM alerts WHERE owner=?", (me,)).fetchone()[0] >= MAX_ALERTS_PER_OWNER:
-            return jsonify({"error": f"You can have up to {MAX_ALERTS_PER_OWNER} alerts. Delete one first."}), 400
-        cur = c.execute("INSERT INTO alerts (query, size, max_total, created, fit, category, owner) VALUES (?,?,?,?,?,?,?)",
-                        (q, (d.get("size") or "").strip()[:60], mx,
-                         time.time(), json.dumps(fit), cat, me))
-        row = dict(c.execute("SELECT * FROM alerts WHERE id=?", (cur.lastrowid,)).fetchone())
-    threading.Thread(target=check_alert, args=(row,), daemon=True).start()
-    return jsonify({"ok": True})
+    return {"id": str(d.get("id") or "")[:40], "query": q, "size": str(d.get("size") or "").strip()[:60],
+            "max_total": mx, "category": cat, "fit": fit}
 
 
-@app.delete("/api/alerts/<int:aid>")
-def alerts_del(aid):
-    with db() as c:
-        c.execute("DELETE FROM alerts WHERE id=? AND owner=?", (aid, owner_id()))
-    return jsonify({"ok": True})
+def check_alert(r):
+    """Best in-stock match for one alert right now: {best_total, best_title, best_site, best_url, hit}."""
+    offers, _, _ = run_search(r["query"], lazy=False)
+    ok = [o for o in offers if not o["sold_out"] and o["total"] is not None
+          and (not r.get("category") or o["category"] == r["category"]) and fit_ok(o, r["size"], fit_ranges(r["fit"]))]
+    best = min(ok, key=lambda o: o["total"], default=None)
+    return {"id": r["id"], "best_total": best and best["total"], "best_title": best and best["title"],
+            "best_site": best and best["site"], "best_url": best and best["url"],
+            "hit": best is not None and (r["max_total"] is None or best["total"] <= r["max_total"])}
 
 
 @app.post("/api/alerts/check")
 @limiter.limit(LIMIT_ALERT_CHECK)
-def alerts_check_now():
-    check_all(owner_id())          # only the caller's own alerts
-    return jsonify({"ok": True})
+def alerts_check():
+    """Stateless: the page sends its saved alerts, we search and answer. Nothing is stored here."""
+    d = request.get_json(silent=True) or {}
+    rows = [x for x in (clean_alert(a) for a in (d.get("alerts") or [])[:MAX_ALERTS_PER_CHECK]) if x]
+    out = []
+    for r in rows:
+        try:
+            out.append(check_alert(r))
+        except Exception as e:
+            print("alert check failed:", e)
+            out.append({"id": r["id"], "error": True})
+    return jsonify({"results": out})
 
 
 @app.get("/")
@@ -1455,8 +1395,8 @@ h2{font-size:18px;font-weight:800;margin:26px 0 4px}p,li{margin:6px 0}a{color:va
 </style>
 <main><h1>Privacy</h1><p class="mut">Price Scout compares prices at heritage and Japanese denim stores. It has no accounts and no ads, and it does not sell data.</p>
 <h2>What you type</h2><p>Your search words are sent to this site, which looks them up at the stores’ public pages. They are not saved, except inside a price alert you choose to create.</p>
-<h2>Price alerts</h2><p>An alert saves your search words, category, sizes, fit ranges and price limit, and is tied to a random code in a cookie (<code>ps_owner</code>), not to a name or an email address. Alerts are checked hourly. You can delete an alert at any time from “Your price alerts”. Clearing your cookies means you can no longer see or delete alerts made earlier in that browser.</p>
-<h2>What stays in your browser</h2><p>Your chosen sizes are kept in this browser (local storage, <code>ps_sizes</code>) so they are there next time. The <code>ps_owner</code> cookie lasts a year, is not readable by page scripts, and is used only for alerts. There are no advertising or analytics cookies.</p>
+<h2>Price alerts</h2><p>Alerts are saved only in this browser (local storage, <code>ps_alerts</code>): your search words, category, sizes, fit ranges and price limit. The server does not store them. When you open the page (at most once an hour) or press “Check now”, the page sends them to this site to look up the current best price, and the answer is not kept. You can delete an alert at any time from “Your price alerts”. Clearing this browser’s site data deletes your alerts. Alerts do not notify you when the page is closed.</p>
+<h2>What stays in your browser</h2><p>Your chosen sizes (<code>ps_sizes</code>) and your alerts (<code>ps_alerts</code>) are kept in this browser’s local storage so they are there next time. This site sets no cookies, and has no advertising or analytics.</p>
 <h2>Your address</h2><p>Your IP address is used to limit how many searches one visitor can make a minute and an hour. That count is held in the server’s memory and is not stored with your searches. The web host may keep ordinary access logs.</p>
 <h2>Other companies</h2><ul><li>The page loads its font from Google Fonts, so Google sees your IP address when you open it.</li><li>Product pictures load straight from each store’s website, and the links open the store’s own site, which has its own privacy policy.</li><li>Exchange rates are fetched by the server, not by your browser.</li></ul>
 <h2>Prices</h2><p>Totals include estimated shipping and import duty and are only estimates. Check the store before you buy.</p>
@@ -1629,7 +1569,7 @@ tr.item{scroll-margin-top:150px}
 <span>Alert me when est. total is at or below $</span><input id="amax" class="sm" type="number" min="0" step="1" placeholder="any">
 <button id="mkalert" class="blue" type="button">Set alert</button><span class="mut" id="amsg">Uses your size and fit filters. Leave the price blank to be alerted when it's in stock.</span></div>
 <details id="alerts" hidden><summary>Your price alerts</summary><div class="card"><div id="alist"></div>
-<p class="mut">Checked every hour while this app is running. <button class="ghost" id="chk">Check now</button></p></div></details>
+<p class="mut">Saved in this browser only. Checked when you open this page (at most hourly). <button class="ghost" id="chk">Check now</button></p></div></details>
 </main>
 <footer class="foot"><a href="/privacy">Privacy</a> · Prices are estimates; check each store before you buy.</footer>
 <script nonce="{{ nonce }}">
@@ -1666,7 +1606,7 @@ const fitObj=()=>{const o={};visKeys().forEach(([k])=>{const lo=num('min_'+k),hi
 const fitRanges=()=>Object.entries(fitObj());
 const fitSizes=(o,w,rs)=>o.measures.filter(m=>m.in_stock&&(!w.length||w.some(x=>sizeMatch(m.size,x)))&&rs.every(([k,[lo,hi]])=>m[k]!=null&&(lo==null||m[k]>=lo)&&(hi==null||m[k]<=hi))).map(m=>m.size);
 const fitOk=(o,w,rs)=>rs.length?fitSizes(o,w,rs).length>0:hasSize(o,w);
-const fitText=f=>{try{return Object.entries(JSON.parse(f||'{}')).map(([k,[lo,hi]])=>' · '+k.replace('_',' ')+' '+(lo!=null&&hi!=null?lo+'–'+hi:lo!=null?'≥ '+lo:'≤ '+hi)+'″').join('')}catch(e){return ''}};
+const fitText=f=>{try{return Object.entries(typeof f==='string'?JSON.parse(f||'{}'):(f||{})).map(([k,[lo,hi]])=>' · '+k.replace('_',' ')+' '+(lo!=null&&hi!=null?lo+'–'+hi:lo!=null?'≥ '+lo:'≤ '+hi)+'″').join('')}catch(e){return ''}};
 const stripP=s=>String(s).replace(/\(.*?\)/g,'');
 const sameSize=(a,b)=>sizeMatch(a,b)||sizeMatch(b,a)||norm(stripP(a))===norm(stripP(b));
 const measureFor=(o,s)=>o.measures.find(m=>sameSize(m.size,s));
@@ -1833,29 +1773,44 @@ function pickCat(c){
   if(DATA&&DATA.browse&&!term&&DATA.category===c){render();return}      // already showing this category
   search();
 }
-async function loadAlerts(){
-  try{
-    const d=await (await fetch('/api/alerts')).json();
-    $('alerts').hidden=!d.alerts.length;$('alerts').open=d.alerts.some(a=>a.notified_total!=null);
-    $('alist').innerHTML=d.alerts.map(a=>{
-      const cond=esc(a.query)+(a.category?' · '+esc(a.category):'')+(a.size?' · size '+esc(a.size):'')+esc(fitText(a.fit))+' · '+(a.max_total!=null?'≤ '+money(a.max_total,'USD'):'any price, in stock');
-      const st=a.notified_total!=null
-        ?`<b>Alert hit:</b> ${money(a.best_total,'USD')} at ${esc(a.best_site)} · <a href="${esc(safeUrl(a.best_url))}" target="_blank" rel="noopener noreferrer">${esc(a.best_title)}</a>`
-        :a.best_total!=null?`Watching. Best now ${money(a.best_total,'USD')} at ${esc(a.best_site)}`
-        :a.checked?'Watching. Nothing in stock matches yet.':'Checking…';
-      return `<div class="arow"><div>${cond}<div class="mut">${st}${a.checked?' · checked '+esc(new Date(a.checked*1000).toLocaleString()):''}</div></div>
-        <button class="ghost" data-del="${a.id}">Delete</button></div>`}).join('');
-    document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{await fetch('/api/alerts/'+b.dataset.del,{method:'DELETE'});loadAlerts()});
-  }catch(e){}
+const AKEY='ps_alerts';
+let ALERTS=[];
+function saveAlerts(){try{localStorage.setItem(AKEY,JSON.stringify(ALERTS))}catch(e){}}
+try{ALERTS=JSON.parse(localStorage.getItem(AKEY)||'[]').filter(a=>a&&a.query)}catch(e){ALERTS=[]}
+function drawAlerts(){
+  $('alerts').hidden=!ALERTS.length;$('alerts').open=ALERTS.some(a=>a.hit);
+  $('alist').innerHTML=ALERTS.map(a=>{
+    const cond=esc(a.query)+(a.category?' · '+esc(a.category):'')+(a.size?' · size '+esc(a.size):'')+esc(fitText(a.fit))+' · '+(a.max_total!=null?'≤ '+money(a.max_total,'USD'):'any price, in stock');
+    const st=a.hit
+      ?`<b>Alert hit:</b> ${money(a.best_total,'USD')} at ${esc(a.best_site)} · <a href="${esc(safeUrl(a.best_url))}" target="_blank" rel="noopener noreferrer">${esc(a.best_title)}</a>`
+      :a.best_total!=null?`Watching. Best now ${money(a.best_total,'USD')} at ${esc(a.best_site)}`
+      :a.checked?'Watching. Nothing in stock matches yet.':'Not checked yet.';
+    return `<div class="arow"><div>${cond}<div class="mut">${st}${a.checked?' · checked '+esc(new Date(a.checked*1000).toLocaleString()):''}</div></div>
+      <button class="ghost" data-del="${esc(a.id)}">Delete</button></div>`}).join('');
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ALERTS=ALERTS.filter(a=>a.id!==b.dataset.del);saveAlerts();drawAlerts()});
+}
+async function checkAlerts(){
+  if(!ALERTS.length)return;
+  const r=await fetch('/api/alerts/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alerts:ALERTS.slice(0,10)})});
+  if(!r.ok)throw new Error(r.status===429?'Too many checks. Wait a bit and try again.':'Could not check alerts.');
+  const res=(await r.json()).results||[];
+  for(const x of res){const a=ALERTS.find(y=>y.id===x.id);if(!a||x.error)continue;
+    a.best_total=x.best_total;a.best_title=x.best_title;a.best_site=x.best_site;a.best_url=x.best_url;a.hit=x.hit;a.checked=Date.now()/1000}
+  saveAlerts();drawAlerts();
+}
+async function loadAlerts(){          // on page load: show them, re-check when the last check is over an hour old
+  drawAlerts();
+  if(ALERTS.some(a=>!a.checked||Date.now()/1000-a.checked>3600)){try{await checkAlerts()}catch(e){}}
 }
 $('mkalert').onclick=async()=>{
-  const body={query:LASTQ,category:CAT==='All'?'':CAT,size:wantList().join(','),fit:fitActive()?fitObj():{},max_total:amax.value};
-  const r=await fetch('/api/alerts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const j=r.ok?{}:await r.json().catch(()=>({}));
-  $('amsg').textContent=r.ok?'Alert created. It is checked now, then every hour while this app is running.':(j.error||'Could not create that alert.');
-  setTimeout(loadAlerts,2500);
+  if(ALERTS.length>=10){$('amsg').textContent='You can have up to 10 alerts. Delete one first.';return}
+  const id=(crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(36).slice(2)).slice(0,40);
+  ALERTS.unshift({id,query:LASTQ,category:CAT==='All'?'':CAT,size:wantList().join(',').slice(0,60),fit:fitActive()?fitObj():{},max_total:amax.value===''?null:Number(amax.value),created:Date.now()/1000});
+  saveAlerts();drawAlerts();$('amsg').textContent='Alert saved in this browser. Checking now…';
+  try{await checkAlerts();$('amsg').textContent='Alert saved in this browser. It is re-checked each time you open this page.'}
+  catch(e){$('amsg').textContent='Alert saved. '+e.message}
 };
-$('chk').onclick=async()=>{$('chk').disabled=true;await fetch('/api/alerts/check',{method:'POST'});$('chk').disabled=false;loadAlerts()};
+$('chk').onclick=async()=>{$('chk').disabled=true;try{await checkAlerts()}catch(e){$('amsg').textContent=e.message}$('chk').disabled=false};
 go.onclick=newSearch;sortSel.onchange=stockBox.onchange=saleBox.onchange=render;
 $('cats').onclick=e=>{const b=e.target.closest('[data-cat]');if(b)pickCat(b.dataset.cat)};
 out.onclick=e=>{
