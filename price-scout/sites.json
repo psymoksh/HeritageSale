@@ -44,7 +44,9 @@
   },
   {
     "name": "Denimio",
-    "base_url": "https://www.denimio.com"
+    "base_url": "https://www.denimio.com",
+    "shipping_usd": 0,
+    "duties_included": true
   },
   {
     "name": "Rodeo Japan",
@@ -79,7 +81,9 @@
   },
   {
     "name": "Red Cast Heritage",
-    "base_url": "https://redcastheritage.com"
+    "base_url": "https://redcastheritage.com",
+    "shipping_usd": 0,
+    "duties_included": true
   },
   {
     "name": "Iron Shop Provisions",
