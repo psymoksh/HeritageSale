@@ -6,7 +6,7 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn -w 1 --threads 8 --timeout 120 -b 0.0.0.0:$PORT app:app
-    healthCheckPath: /privacy
+    healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
@@ -16,5 +16,7 @@ services:
         value: "1"
       - key: CACHE_DIR
         value: /tmp/cache
+      - key: MALLOC_ARENA_MAX
+        value: "2"
       - key: CONTACT_EMAIL
         sync: false

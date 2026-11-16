@@ -47,7 +47,7 @@ Email alerts were removed for now (see below).
 - Lazy fit charts: `/api/search` runs `run_search(..., lazy=True)`: charts in the catalog description are used, charts already cached from product pages are used, the rest are flagged `fit_pending` (max `MAX_PAGE_FETCHES` = 10 per store) and the page asks `POST /api/fit` in batches of 10 (3 at a time) after the list is shown, then re-renders (status "reading N more size charts…"; pending listings are not counted as "hidden: no measurement data"). Alerts call `run_search` with `lazy=False`, so they see full data.
 
 ## Memory (free host, 512 MB)
-`slim_product` keeps only the fields the app reads (title, handle, vendor, product_type, tags, option names, variants' option1-3/available/price/compare_at_price/barcode, first image, `url`; `body_html` only if it has 2+ measurement words). Applied in `_refresh_catalog` and `load_disk_cache`. All 41,025 products: ~450 MB RSS (was ~790). Any new product field the app reads must be added to `slim_product`. Free Render sleeps after 15 min idle (keep-awake ping optional); `CACHE_DIR=/tmp/cache`, rebuilt after restart.
+`slim_product` keeps only the fields the app reads (title, handle, vendor, product_type, tags, option names, variants' option1-3/available/price/compare_at_price/barcode, first image, `url`; `body_html` only if it has 2+ measurement words). Applied per page in `_fetch_catalog` (so a raw catalog never sits in memory), in `_refresh_catalog` and in `load_disk_cache`. All 41,025 products: ~450 MB RSS (was ~790). Any new product field the app reads must be added to `slim_product`. Free Render sleeps after 15 min idle (keep-awake ping optional); `CACHE_DIR=/tmp/cache`, rebuilt after restart.
 
 ## Abuse protection
 - Flask-Limiter, per visitor IP, in-memory by default (`LIMITER_STORAGE=redis://...` for several workers). Starting limits: search 20/min, alert check 20/h, everything 300/h. Env overrides: `LIMIT_SEARCH`, `LIMIT_ALERT_CHECK`, `LIMIT_DEFAULT`. Over the limit returns 429 JSON with `Retry-After`; the page shows a "wait a minute" message.
@@ -75,7 +75,7 @@ Bauhaus design system, style only: `--dp-*` tokens, Host Grotesk, flat red/blue/
 `python3 explain_search.py "query" -s "store"` loads one Shopify store's catalog and shows, per typed word, how many products contain it as a whole word, how many match every word (what the site shows), and near misses with the missing word. Live check 2026-11-06: Red Cast Heritage loads 1,877 listings (EUR, ships from Spain, 10/10 measurements), so empty results there come from the search wording, not the store.
 
 ## Testing
-Mock `requests.get` (or patch `app.run_search` with generated offers for UI tests); Playwright with `/usr/bin/google-chrome --no-sandbox` for UI checks at 1280px and 390px; `node --check` on the page JS; `python3 -W error -m py_compile app.py`.
+Mock `requests.get` (or patch `app.run_search` with generated offers for UI tests); Playwright with `/usr/bin/google-chrome --no-sandbox` for UI checks at 1280px and 390px; `node --check` on the page JS; `python3 -W error -m py_compile app.py`; `python3 -m pyflakes app.py` (catches deleted definitions that compile fine: a past cleanup removed `HEADERS` and only live fetches broke). `/healthz` is the limiter-exempt health check.
 
 ## Prototype
 `../price-scout-prototype.html` is a standalone clickable demo with made-up data. Keep it in sync with the `PAGE` markup and CSS when the UI changes.

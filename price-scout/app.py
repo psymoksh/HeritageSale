@@ -14,6 +14,7 @@ from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 64 * 1024   # request bodies here are tiny JSON
 
 # ---------------- Abuse protection ----------------
 # Starting limits, per visitor IP. Override with env vars (no code change) once real traffic shows what is right.
@@ -77,6 +78,12 @@ def safe_http(u):
 def parse_price(text):
     vals = [float(m.replace(",", "")) for m in PRICE_RE.findall(text or "")]
     return min(vals) if vals else None  # "Was $100 Now $80" -> 80
+
+
+UA = "Mozilla/5.0 (compatible; PriceScout/1.0)"
+HEADERS = {"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"}
+PRICE_RE = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d+(?:\.\d{2})?)")
+_robots = {}
 
 
 def allowed(url):
@@ -318,7 +325,7 @@ def _fetch_catalog(base):
                                  headers=HEADERS, timeout=20)
                 r.raise_for_status()
                 batch = r.json()["products"]
-                products += batch[:CATALOG_CAP - len(products)]
+                products += [slim_product(p) for p in batch[:CATALOG_CAP - len(products)]]   # slim each page as it arrives: a full raw catalog never sits in memory
                 if len(batch) < 250:
                     break
                 page += 1
@@ -1361,8 +1368,10 @@ def check_alert(r):
 @limiter.limit(LIMIT_ALERT_CHECK)
 def alerts_check():
     """Stateless: the page sends its saved alerts, we search and answer. Nothing is stored here."""
-    d = request.get_json(silent=True) or {}
-    rows = [x for x in (clean_alert(a) for a in (d.get("alerts") or [])[:MAX_ALERTS_PER_CHECK]) if x]
+    d = request.get_json(silent=True)
+    lst = d.get("alerts") if isinstance(d, dict) else None
+    lst = lst if isinstance(lst, list) else []
+    rows = [x for x in (clean_alert(a) for a in lst[:MAX_ALERTS_PER_CHECK]) if x]
     out = []
     for r in rows:
         try:
@@ -1371,6 +1380,12 @@ def alerts_check():
             print("alert check failed:", e)
             out.append({"id": r["id"], "error": True})
     return jsonify({"results": out})
+
+
+@app.get("/healthz")
+@limiter.exempt
+def healthz():
+    return "ok"
 
 
 @app.get("/")
@@ -1774,11 +1789,13 @@ function pickCat(c){
   search();
 }
 const AKEY='ps_alerts';
+let CHECKING=false,DRAWN=false,NEWHIT=false;
 let ALERTS=[];
 function saveAlerts(){try{localStorage.setItem(AKEY,JSON.stringify(ALERTS))}catch(e){}}
 try{ALERTS=JSON.parse(localStorage.getItem(AKEY)||'[]').filter(a=>a&&a.query)}catch(e){ALERTS=[]}
 function drawAlerts(){
-  $('alerts').hidden=!ALERTS.length;$('alerts').open=ALERTS.some(a=>a.hit);
+  const wasOpen=!$('alerts').hidden&&$('alerts').open;
+  $('alerts').hidden=!ALERTS.length;$('alerts').open=wasOpen||(!DRAWN&&ALERTS.some(a=>a.hit))||NEWHIT;DRAWN=true;NEWHIT=false;
   $('alist').innerHTML=ALERTS.map(a=>{
     const cond=esc(a.query)+(a.category?' · '+esc(a.category):'')+(a.size?' · size '+esc(a.size):'')+esc(fitText(a.fit))+' · '+(a.max_total!=null?'≤ '+money(a.max_total,'USD'):'any price, in stock');
     const st=a.hit
@@ -1790,13 +1807,17 @@ function drawAlerts(){
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ALERTS=ALERTS.filter(a=>a.id!==b.dataset.del);saveAlerts();drawAlerts()});
 }
 async function checkAlerts(){
-  if(!ALERTS.length)return;
-  const r=await fetch('/api/alerts/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alerts:ALERTS.slice(0,10)})});
-  if(!r.ok)throw new Error(r.status===429?'Too many checks. Wait a bit and try again.':'Could not check alerts.');
-  const res=(await r.json()).results||[];
-  for(const x of res){const a=ALERTS.find(y=>y.id===x.id);if(!a||x.error)continue;
-    a.best_total=x.best_total;a.best_title=x.best_title;a.best_site=x.best_site;a.best_url=x.best_url;a.hit=x.hit;a.checked=Date.now()/1000}
-  saveAlerts();drawAlerts();
+  if(!ALERTS.length||CHECKING)return;
+  CHECKING=true;
+  const sent=ALERTS.slice(0,10),now=Date.now()/1000;
+  sent.forEach(a=>{a.checked=now});          // the attempt counts even if it fails, so a failure is not retried every minute
+  saveAlerts();
+  try{
+    const r=await fetch('/api/alerts/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alerts:sent})});
+    if(!r.ok)throw new Error(r.status===429?'Too many checks. Wait a bit and try again.':'Could not check alerts.');
+    for(const x of (await r.json()).results||[]){const a=ALERTS.find(y=>y.id===x.id);if(!a||x.error)continue;
+      a.best_total=x.best_total;a.best_title=x.best_title;a.best_site=x.best_site;a.best_url=x.best_url;if(x.hit&&!a.hit)NEWHIT=true;a.hit=x.hit}
+  }finally{CHECKING=false;saveAlerts();drawAlerts()}
 }
 async function loadAlerts(){          // on page load: show them, re-check when the last check is over an hour old
   drawAlerts();
