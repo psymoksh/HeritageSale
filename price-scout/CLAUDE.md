@@ -15,7 +15,7 @@ Email alerts were removed for now (see below).
   `origin`, `currency`, `shipping_usd`, `free_shipping_over_usd`, `duty_pct`, `duties_included`,
   `type: "html"` with CSS selectors (`item`, `title`, `price`, `link`, optional `image`, `sizes`, `size_soldout_class`) and `search_url` for non-Shopify stores (e.g. Self Edge, which runs OpenCart). `check_stores.py` searches "jeans" for html stores when no query is given. `detail: "colorme"` (+ `page_encoding`) reads each listing's product page for sizes, stock and chart (Celluloid; see How it works), `search_encoding` (e.g. `euc-jp` for Celluloid's Color Me Shop) encodes the query; non-$ prices take the first number (Japanese "30,000円(税込33,000円)" -> 30,000, the export / pre-tax price).
   `type: "square"` + `square_owner_id` + `square_site_id` (Brass Tacks) reads Square Online's storefront JSON at `/app/store/api/v28/editor/users/{owner}/sites/{site}/products`, reshaped like a Shopify product. Find the owner id in the shop page's network requests (`/app/website/cms/api/v1/users/{owner}/...`) and the site id as `catalogSiteId` in the page HTML.
-- `render.yaml` + `.python-version`: free Render deploy (README 6a). No database: alerts are in the browser.
+- `render.yaml` (at the REPOSITORY root, `rootDir: price-scout`, because the repo holds the app in a subfolder) + `.python-version`: free Render deploy (README 6a). No database: alerts are in the browser.
 
 ## Endpoints
 `/` page · `GET /api/search?q=&category=` (20/min) · `POST /api/fit` (body `{urls:[≤10]}`, 600/h; only our stores' product pages) · `/privacy` · `POST /api/alerts/check` (body `{alerts:[≤10]}`, stateless, 20/h)

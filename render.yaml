@@ -1,9 +1,10 @@
-# Render Blueprint: free web service, no disk. Alerts live in visitors' browsers; the catalog cache is rebuilt after a restart.
+# Render Blueprint (must sit at the repository root; the app lives in price-scout/, hence rootDir): free web service, no disk. Alerts live in visitors' browsers; the catalog cache is rebuilt after a restart.
 services:
   - type: web
     name: heritagesale
     runtime: python
     plan: free
+    rootDir: price-scout
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn -w 1 --threads 8 --timeout 120 -b 0.0.0.0:$PORT app:app
     healthCheckPath: /healthz
