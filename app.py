@@ -296,7 +296,33 @@ def _refresh_catalog(key, fetch):
         return products
 
 
-def cached_catalog(key, fetch, max_age=CATALOG_TTL):
+class CatalogLoading(Exception):
+    """A store's catalog is not downloaded yet (first minutes after a start on a host with an empty disk)."""
+
+
+_kicked = set()
+
+
+def _kick(key, fetch):
+    """Download a catalog in the background (once at a time per store) without making a search wait for it."""
+    with _kick_lock:
+        if key in _kicked:
+            return
+        _kicked.add(key)
+
+    def run():
+        try:
+            _refresh_catalog(key, fetch)
+        finally:
+            with _kick_lock:
+                _kicked.discard(key)
+    threading.Thread(target=run, daemon=True).start()
+
+
+_kick_lock = threading.Lock()
+
+
+def cached_catalog(key, fetch, max_age=CATALOG_TTL, wait=True):
     hit = _catalog.get(key)
     age = time.time() - hit[0] if hit else None
     if hit and age < max_age:
@@ -304,15 +330,18 @@ def cached_catalog(key, fetch, max_age=CATALOG_TTL):
     if hit and hit[1] and age < CATALOG_STALE_OK:      # stale: answer now, refresh behind the scenes
         threading.Thread(target=_refresh_catalog, args=(key, fetch), daemon=True).start()
         return hit[1]
+    if not wait:                                       # searches never sit through 25 downloads: say so and download behind the scenes
+        _kick(key, fetch)
+        raise CatalogLoading("still loading this store's catalog, try again in a minute")
     return _refresh_catalog(key, fetch)
 
 
 CATALOG_CAP = int(os.environ.get("CATALOG_CAP", 8000))   # max products read per store (250 per request)
 
 
-def get_catalog(base, max_age=CATALOG_TTL):
+def get_catalog(base, max_age=CATALOG_TTL, wait=True):
     """Shopify stores publish their catalog at /products.json. Cached for an hour (and on disk); None if the store has none."""
-    return cached_catalog(base, lambda: _fetch_catalog(base), max_age)
+    return cached_catalog(base, lambda: _fetch_catalog(base), max_age, wait)
 
 
 def _fetch_catalog(base):
@@ -334,10 +363,10 @@ def _fetch_catalog(base):
     return products or None
 
 
-def get_square_catalog(base, site, max_age=CATALOG_TTL):
+def get_square_catalog(base, site, max_age=CATALOG_TTL, wait=True):
     """Square Online stores (no /products.json) serve their storefront catalog as JSON. Needs `square_owner_id` and
     `square_site_id` in sites.json. Products are reshaped like Shopify's so from_shopify / measure_rows work unchanged."""
-    return cached_catalog(base + "#square", lambda: _fetch_square(base, site), max_age)
+    return cached_catalog(base + "#square", lambda: _fetch_square(base, site), max_age, wait)
 
 
 def _fetch_square(base, site):
@@ -1040,7 +1069,7 @@ def search_site(site, query, category=None):
     name, base = site["name"], site["base_url"].rstrip("/")
     try:
         products = (None if site.get("type") == "html" else
-                    get_square_catalog(base, site) if site.get("type") == "square" else get_catalog(base))
+                    get_square_catalog(base, site, wait=False) if site.get("type") == "square" else get_catalog(base, wait=False))
         if products:
             found, url = shopify_found(base, products), base
         elif not query:  # browsing a category needs a store catalog; search pages can't list everything
