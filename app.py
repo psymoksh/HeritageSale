@@ -278,12 +278,16 @@ def load_disk_cache():
     return n
 
 
+_dl_sem = threading.BoundedSemaphore(int(os.environ.get("DOWNLOADS_AT_ONCE", 3)))   # concurrent catalog downloads
+
+
 def _refresh_catalog(key, fetch):
     with _lock_for(key):                       # one fetch per store at a time, even if a search and the warm-up collide
         old = _catalog.get(key)
         if old and time.time() - old[0] < 60:  # someone just refreshed it
             return old[1]
-        products = fetch() or None
+        with _dl_sem:                          # at most a few store downloads at once: keeps memory and CPU low on a small host
+            products = fetch() or None
         if products:
             products = [slim_product(p) for p in products]
         now = time.time()
