@@ -15,7 +15,7 @@ Email alerts were removed for now (see below).
   `origin`, `currency`, `shipping_usd`, `free_shipping_over_usd`, `duty_pct`, `duties_included`,
   `type: "html"` with CSS selectors (`item`, `title`, `price`, `link`, optional `image`, `sizes`, `size_soldout_class`) and `search_url` for non-Shopify stores (e.g. Self Edge, which runs OpenCart). `check_stores.py` searches "jeans" for html stores when no query is given. `detail: "colorme"` (+ `page_encoding`) reads each listing's product page for sizes, stock and chart (Celluloid; see How it works), `search_encoding` (e.g. `euc-jp` for Celluloid's Color Me Shop) encodes the query; non-$ prices take the first number (Japanese "30,000円(税込33,000円)" -> 30,000, the export / pre-tax price).
   `type: "square"` + `square_owner_id` + `square_site_id` (Brass Tacks) reads Square Online's storefront JSON at `/app/store/api/v28/editor/users/{owner}/sites/{site}/products`, reshaped like a Shopify product. Find the owner id in the shop page's network requests (`/app/website/cms/api/v1/users/{owner}/...`) and the site id as `catalogSiteId` in the page HTML.
-- `render.yaml` (at the REPOSITORY root, `rootDir: price-scout`, because the repo holds the app in a subfolder) + `.python-version`: free Render deploy (README 6a). No database: alerts are in the browser.
+- `render.yaml` + `.python-version` (the repository root IS the app folder; keep app.py, requirements.txt and render.yaml together): free Render deploy (README 6a). No database: alerts are in the browser.
 
 ## Endpoints
 `/` page · `GET /api/search?q=&category=` (20/min) · `POST /api/fit` (body `{urls:[≤10]}`, 600/h; only our stores' product pages) · `/privacy` · `POST /api/alerts/check` (body `{alerts:[≤10]}`, stateless, 20/h)
@@ -78,4 +78,4 @@ Bauhaus design system, style only: `--dp-*` tokens, Host Grotesk, flat red/blue/
 Mock `requests.get` (or patch `app.run_search` with generated offers for UI tests); Playwright with `/usr/bin/google-chrome --no-sandbox` for UI checks at 1280px and 390px; `node --check` on the page JS; `python3 -W error -m py_compile app.py`; `python3 -m pyflakes app.py` (catches deleted definitions that compile fine: a past cleanup removed `HEADERS` and only live fetches broke). `/healthz` is the limiter-exempt health check.
 
 ## Prototype
-`../price-scout-prototype.html` is a standalone clickable demo with made-up data. Keep it in sync with the `PAGE` markup and CSS when the UI changes.
+`price-scout-prototype.html` (next to app.py in the repository) is a standalone clickable demo with made-up data. Keep it in sync with the `PAGE` markup and CSS when the UI changes.

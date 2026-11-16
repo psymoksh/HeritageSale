@@ -1,10 +1,12 @@
+cache/
 __pycache__/
-*.pyc
-price-scout/alerts.db
-price-scout/store_report.json
-store_report.json
 alerts.db
+*.db
+store_report.json
+fit_diagnosis.txt
+page_dump.html
+celluloid_page.html
 .env
+*.pyc
 .DS_Store
 .venv/
-fit_diagnosis.txt
