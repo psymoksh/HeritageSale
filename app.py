@@ -1270,6 +1270,30 @@ WARM_EVERY = int(os.environ.get("WARM_EVERY_MIN", 30)) * 60
 _started = False
 
 
+def memory_mb():
+    """(process memory, container memory used, container limit) in MB; None where the host does not say."""
+    def num(path):
+        try:
+            v = open(path).read().strip()
+            return None if v == "max" else int(v) / 1e6
+        except Exception:
+            return None
+    rss = None
+    try:
+        rss = int(re.search(r"VmRSS:\s+(\d+)", open("/proc/self/status").read()).group(1)) / 1024
+    except Exception:
+        pass
+    cur = num("/sys/fs/cgroup/memory.current") or num("/sys/fs/cgroup/memory/memory.usage_in_bytes")
+    lim = num("/sys/fs/cgroup/memory.max") or num("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+    r = lambda x: None if x is None else round(x)
+    return r(rss), r(cur), (r(lim) if lim and lim < 1e6 else None)
+
+
+def log_memory(tag):
+    rss, cur, lim = memory_mb()
+    print(f"[memory] {tag}: process {rss} MB, container {cur} MB of {lim} MB, {sum(len(v[1] or []) for v in _catalog.values())} products in {len(_catalog)} catalogs", flush=True)
+
+
 def prewarm_once():
     sites = load_sites()
     usd_rates()
@@ -1289,6 +1313,7 @@ def prewarm_once():
             pass
     with ThreadPoolExecutor(6) as ex:
         list(ex.map(warm, sites))
+    log_memory("after warm-up")
 
 
 def prewarm_loop():
@@ -1413,6 +1438,19 @@ def alerts_check():
             print("alert check failed:", e)
             out.append({"id": r["id"], "error": True})
     return jsonify({"results": out})
+
+
+@app.get("/status")
+@limiter.limit("30 per hour")
+def status():
+    """Memory and catalog counts for the owner. Off unless STATUS_TOKEN is set; open /status?token=... ."""
+    tok = os.environ.get("STATUS_TOKEN", "")
+    if not tok or not secrets.compare_digest(request.args.get("token", ""), tok):
+        return "not found", 404
+    rss, cur, lim = memory_mb()
+    return jsonify({"process_mb": rss, "container_mb": cur, "container_limit_mb": lim,
+                    "catalogs": len(_catalog), "products": sum(len(v[1] or []) for v in _catalog.values()),
+                    "stores_downloading": len(_kicked)})
 
 
 @app.get("/healthz")

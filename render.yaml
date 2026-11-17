@@ -18,5 +18,7 @@ services:
         value: /tmp/cache
       - key: MALLOC_ARENA_MAX
         value: "2"
+      - key: STATUS_TOKEN
+        generateValue: true
       - key: CONTACT_EMAIL
         sync: false

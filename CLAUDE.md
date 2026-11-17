@@ -51,6 +51,8 @@ Email alerts were removed for now (see below).
 ## Memory (free host, 512 MB)
 `slim_product` keeps only the fields the app reads (title, handle, vendor, product_type, tags, option names, variants' option1-3/available/price/compare_at_price/barcode, first image, `url`; `body_html` only if it has 2+ measurement words). Applied per page in `_fetch_catalog` (so a raw catalog never sits in memory), in `_refresh_catalog` and in `load_disk_cache`. All 41,025 products: ~450 MB RSS (was ~790). Any new product field the app reads must be added to `slim_product`. Free Render sleeps after 15 min idle (keep-awake ping optional); `CACHE_DIR=/tmp/cache`, rebuilt after restart.
 
+- Memory readout: `log_memory` prints `[memory] ...` after each warm-up cycle (Logs tab); `/status?token=` (needs `STATUS_TOKEN`, else 404) returns `memory_mb()` (process RSS, cgroup current/limit) and catalog counts. Used because free Render shows no memory metrics.
+
 ## Abuse protection
 - Flask-Limiter, per visitor IP, in-memory by default (`LIMITER_STORAGE=redis://...` for several workers). Starting limits: search 20/min, alert check 20/h, everything 300/h. Env overrides: `LIMIT_SEARCH`, `LIMIT_ALERT_CHECK`, `LIMIT_DEFAULT`. Over the limit returns 429 JSON with `Retry-After`; the page shows a "wait a minute" message.
 - Set `TRUST_PROXY=<number of proxies>` behind a host/proxy so the limiter sees real visitor IPs.
