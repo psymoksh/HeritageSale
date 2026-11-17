@@ -190,6 +190,24 @@ def _plain(text):
     return re.sub(r"[\W_]+", " ", text.lower()).strip()
 
 
+def matcher(query):
+    """matches() for one query, prepared once: returns a test on an already-_plain()ed text (fast over 40,000 listings)."""
+    q = _plain(query)
+    if not q:
+        return lambda t: True
+    exact = [x for x in q.split() if not any(c.isdigit() for c in x)]
+    prefix = [x for x in q.split() if any(c.isdigit() for c in x)]
+    sq = q.replace(" ", "")
+
+    def test(t):
+        words = t.split()
+        ws = set(words)
+        if all(x in ws for x in exact) and all(any(w.startswith(x) for w in words) for x in prefix):
+            return True
+        return len(sq) >= 5 and sq in t.replace(" ", "")
+    return test
+
+
 def matches(title, query):
     """Every word typed must appear in the title as a whole word, in any order, ignoring case and punctuation.
     No fuzzy or partial-word matching ('ron' does not find 'Iron Heart'). A typed word containing a digit may be
@@ -1095,12 +1113,18 @@ def search_site(site, query, category=None):
                 cur, assumed = "USD", True
         ships_from = store_country(site, base, bool(products))
         offers = []
+        test = matcher(query)
         for t, p, u, *rest in found:
             x = rest[0] if rest else {}
+            plain = x.get("_plain")
+            if plain is None:
+                plain = _plain(x.get("match") or t)
+                if rest:
+                    x["_plain"] = plain     # kept with the memoised listing, so later searches skip this step
+            if not test(plain):
+                continue
             u = safe_http(u)
             if not u:
-                continue
-            if not matches(x.get("match") or t, query):
                 continue
             cat = x.get("category") or categorize("", t)
             if category and cat != category:
@@ -1309,6 +1333,8 @@ def prewarm_once():
                 products = get_catalog(base, max_age=WARM_EVERY)
                 shop_meta(base)
                 esc_probe(base, products)   # stores using the ESC size-guide app (Withered Fig): load all charts once
+                if products:
+                    shopify_found(base, products)   # build the search listings now, so the first visitor's search is not the slow one
         except Exception:
             pass
     with ThreadPoolExecutor(6) as ex:
