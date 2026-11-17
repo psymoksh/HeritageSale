@@ -1257,6 +1257,7 @@ def run_search(q, category=None, lazy=False):
     assign_groups(offers)
     fill_measures(offers, lazy)
     notes = [f"{n}: {e}" for n, _, e in res if e and not (browse and e == "no matching results")]
+    info["loading"] = sum(1 for _, _, e in res if e and ("still loading" in e or "too slow" in e))   # the page re-asks while > 0
     return offers, notes, info
 
 
@@ -1699,6 +1700,7 @@ tr.item{scroll-margin-top:150px}
 <div id="fitB"><p class="mut fitlab">Bottoms</p><div class="fitgrid fit"><label>Waist <input id="min_waist" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_waist" type="number" step="0.25" min="0" placeholder="max"></label><label>Thigh <input id="min_thigh" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_thigh" type="number" step="0.25" min="0" placeholder="max"></label><label>Front rise <input id="min_front_rise" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_front_rise" type="number" step="0.25" min="0" placeholder="max"></label><label>Back rise <input id="min_back_rise" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_back_rise" type="number" step="0.25" min="0" placeholder="max"></label><label>Knee <input id="min_knee" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_knee" type="number" step="0.25" min="0" placeholder="max"></label><label>Leg opening <input id="min_leg_opening" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_leg_opening" type="number" step="0.25" min="0" placeholder="max"></label></div></div>
 <div id="fitT"><p class="mut fitlab">Tops and outerwear</p><div class="fitgrid fit"><label>Chest <input id="min_chest" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_chest" type="number" step="0.25" min="0" placeholder="max"></label><label>Shoulder <input id="min_shoulder" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_shoulder" type="number" step="0.25" min="0" placeholder="max"></label><label>Length <input id="min_length" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_length" type="number" step="0.25" min="0" placeholder="max"></label><label>Sleeve <input id="min_sleeve" type="number" step="0.25" min="0" placeholder="min"> – <input id="max_sleeve" type="number" step="0.25" min="0" placeholder="max"></label></div></div>
 <p class="mut">Garment measurements read from each product’s size chart (its description, or its product page). Bottoms: waist, thigh, rises, knee, leg opening. Tops and outerwear: chest (flat, pit to pit), shoulder, length (back length), sleeve. Full circumferences are halved to flat widths and centimetres converted to inches. Listings without a readable chart (for example, a chart that is only an image) are hidden while a range is set, and a range for one group hides products from the other.</p></details>
+<p id="wake" class="mut" hidden></p>
 <div id="out"></div>
 <div class="ctl" id="abar" hidden>
 <span>Alert me when est. total is at or below $</span><input id="amax" class="sm" type="number" min="0" step="1" placeholder="any">
@@ -1861,8 +1863,10 @@ function showHint(){
   DATA=null;$('ctl').hidden=true;$('fit').hidden=true;$('abar').hidden=true;updateCats(null);
   out.innerHTML='<div class="card"><p>Type a product above, or pick a category to browse its cheapest listings.</p></div>';
 }
-async function load(term,cat){
-  go.disabled=true;out.innerHTML='<div class="card"><p class="mut">Searching stores…</p></div>';
+let LOADID=0;
+async function load(term,cat,tries){
+  tries=tries||0;const id=++LOADID;clearTimeout(load.t);
+  go.disabled=true;if(!tries)out.innerHTML='<div class="card"><p class="mut">Searching stores…</p></div>';
   try{
     const r=await fetch('/api/search?q='+encodeURIComponent(term)+(cat?'&category='+encodeURIComponent(cat):''));
     if(!r.ok)throw new Error(r.status===429?'too many searches, please wait a minute and try again':'HTTP '+r.status);
@@ -1873,6 +1877,11 @@ async function load(term,cat){
     const c=DATA.offers.filter(o=>(CAT==='All'||o.category===CAT)&&!o.sold_out&&o.total!=null&&fitPass(o,wantList())).map(o=>o.total);
     amax.value=c.length?Math.floor(Math.min(...c)*0.9):'';
     $('ctl').hidden=false;$('abar').hidden=!term;render();fitFill(DATA);
+    const n=DATA.loading||0,w=$('wake');
+    if(n&&tries<8){   // the server just woke up: stores are still downloading, so ask again shortly
+      w.hidden=false;w.textContent=`${n} of 25 stores are still waking up. Results will refresh on their own in 20 seconds.`;
+      load.t=setTimeout(()=>{if(id===LOADID)load(term,cat,tries+1)},20000);
+    }else{w.hidden=!n;w.textContent=n?`${n} stores did not answer. Search again in a minute to include them.`:''}
   }catch(e){out.innerHTML='<div class="card"><p class="mut">Something went wrong: '+esc(e.message)+'</p></div>'}
   go.disabled=false;
 }
