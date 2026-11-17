@@ -2,7 +2,7 @@
 Run:  pip install -r requirements.txt && python app.py   ->  http://localhost:5000
 """
 import gzip, hashlib, json, os, re, secrets, threading, time, unicodedata, urllib.robotparser
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from html import escape
 from urllib.parse import quote_plus, urljoin, urlparse
 
@@ -1210,11 +1210,31 @@ def assign_groups(offers):
         o["gid"] = ids.setdefault(find(o.pop("_k")), f"g{len(ids)}")
 
 
+SEARCH_DEADLINE = float(os.environ.get("SEARCH_DEADLINE", 20))   # seconds a search waits for stores
+
+
 def run_search(q, category=None, lazy=False):
     """(offers sorted cheapest first, notes, info). With no search text, a category is browsed instead."""
     sites = load_sites()
-    with ThreadPoolExecutor(12) as ex:
-        res = list(ex.map(lambda site: search_site(site, q, category), sites))
+    t0 = time.time()
+    took = {}
+
+    def one(site):
+        t = time.time()
+        try:
+            return search_site(site, q, category)
+        finally:
+            took[site["name"]] = time.time() - t
+    ex = ThreadPoolExecutor(12)
+    futs = [ex.submit(one, site) for site in sites]
+    wait(futs, timeout=SEARCH_DEADLINE)        # a slow store must not hold the whole page: answer with what is ready
+    ex.shutdown(wait=False)                     # late stores finish in the background and fill their caches for next time
+    res = [f.result() if f.done() else (site["name"], [], "too slow to answer this time, try again shortly")
+           for f, site in zip(futs, sites)]
+    slow = sorted(((v, k) for k, v in took.items()), reverse=True)[:3]
+    late = [site["name"] for f, site in zip(futs, sites) if not f.done()]
+    print(f"[search] stores {time.time() - t0:.1f}s; slowest " + ", ".join(f"{k} {v:.1f}s" for v, k in slow)
+          + (f"; not ready: {', '.join(late)}" if late else ""), flush=True)
     offers = [o for _, found, _ in res for o in found]
     rates, by_name = usd_rates(), {st["name"]: st for st in sites}
     for o in offers:
@@ -1248,8 +1268,11 @@ def api_search():
     cat = cat if cat in CATEGORIES else None
     if not q and not cat:
         return jsonify({"offers": [], "notes": [], "browse": False, "category": None, "total_matches": 0, "truncated": False})
+    t0 = time.time()
     offers, notes, info = run_search(q, cat, lazy=True)
-    return jsonify({"offers": offers, "notes": notes, **info})
+    out = jsonify({"offers": offers, "notes": notes, **info})
+    print(f"[search] answered in {time.time() - t0:.1f}s with {len(offers)} listings", flush=True)
+    return out
 
 
 LIMIT_FIT = os.environ.get("LIMIT_FIT", "600 per hour")   # the page asks in small batches after a search
